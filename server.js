@@ -1,3 +1,4 @@
+
 const express = require("express");
 const { Pool } = require("pg");
 require("dotenv").config();
@@ -18,9 +19,13 @@ app.use((req, res, next) => {
   next();
 });
 
-// PostgreSQL database connection
+// PostgreSQL connection
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL
+});
+
+pool.on("error", (error) => {
+  console.error("Unexpected database error:", error.message);
 });
 
 // Homepage
@@ -36,6 +41,20 @@ app.get("/health", (req, res) => {
   });
 });
 
+// Test security
+function checkTestSecret(req, res, next) {
+  const secret = process.env.MPESA_TEST_SECRET;
+
+  if (!secret || req.get("x-test-key") !== secret) {
+    return res.status(401).json({
+      status: "ERROR",
+      message: "Not authorized."
+    });
+  }
+
+  next();
+}
+
 // Daraja authentication
 async function getDarajaAccessToken() {
   const key = process.env.MPESA_CONSUMER_KEY;
@@ -45,7 +64,9 @@ async function getDarajaAccessToken() {
     throw new Error("Daraja credentials are missing.");
   }
 
-  const credentials = Buffer.from(`${key}:${secret}`).toString("base64");
+  const credentials = Buffer.from(
+    `${key}:${secret}`
+  ).toString("base64");
 
   const response = await fetch(
     "https://sandbox.safaricom.co.ke/oauth/v1/generate?grant_type=client_credentials",
@@ -67,21 +88,7 @@ async function getDarajaAccessToken() {
   return data.access_token;
 }
 
-// Protected test routes
-function checkTestSecret(req, res, next) {
-  const testSecret = process.env.MPESA_TEST_SECRET;
-
-  if (!testSecret || req.get("x-test-key") !== testSecret) {
-    return res.status(401).json({
-      status: "ERROR",
-      message: "Not authorized."
-    });
-  }
-
-  next();
-}
-
-// Test Daraja authentication
+// Daraja authentication test
 app.get("/api/mpesa/auth-check", checkTestSecret, async (req, res) => {
   try {
     await getDarajaAccessToken();
@@ -91,7 +98,7 @@ app.get("/api/mpesa/auth-check", checkTestSecret, async (req, res) => {
       message: "Daraja sandbox authentication successful."
     });
   } catch (error) {
-    console.error("Daraja authentication failed:", error.message);
+    console.error("Daraja error:", error.message);
 
     res.status(502).json({
       status: "ERROR",
@@ -100,17 +107,12 @@ app.get("/api/mpesa/auth-check", checkTestSecret, async (req, res) => {
   }
 });
 
-// Test PostgreSQL connection
+// Database connection test
 app.get("/api/db-check", checkTestSecret, async (req, res) => {
-  if (!process.env.DATABASE_URL) {
-    return res.status(503).json({
-      status: "ERROR",
-      message: "Database URL is missing."
-    });
-  }
-
   try {
-    const result = await pool.query("SELECT NOW() AS database_time");
+    const result = await pool.query(
+      "SELECT NOW() AS database_time"
+    );
 
     res.json({
       status: "OK",
@@ -118,43 +120,21 @@ app.get("/api/db-check", checkTestSecret, async (req, res) => {
       database_time: result.rows[0].database_time
     });
   } catch (error) {
-    console.error("Database connection failed:", error.message);
+    console.error("Database test error:", error.message);
 
     res.status(500).json({
       status: "ERROR",
-      message: "Database connection failed. Check database settings."
+      message: "Database connection failed."
     });
   }
 });
 
-// C2B validation callback
-app.post("/c2b/validation", (req, res) => {
-  console.log("C2B validation request received");
-
-  res.json({
-    ResultCode: 0,
-    ResultDesc: "Accepted"
-  });
-});
-
-// C2B confirmation callback
-app.post("/c2b/confirmation", (req, res) => {
-  const payment = req.body;
-
-  console.log("C2B payment received:", {
-    receipt: payment.TransID,
-    amount: payment.TransAmount,
-    reference: payment.BillRefNumber
-  });
-
-  res.json({
-    ResultCode: 0,
-    ResultDesc: "Accepted"
-  });
-});
-`);
-// Create the platform database tables
+// Create platform database tables
 async function initializeDatabase() {
+  if (!process.env.DATABASE_URL) {
+    throw new Error("DATABASE_URL is missing.");
+  }
+
   await pool.query(`
     CREATE TABLE IF NOT EXISTS resellers (
       id BIGSERIAL PRIMARY KEY,
@@ -234,15 +214,50 @@ async function initializeDatabase() {
     );
   `);
 
-  const PORT = process.env.PORT || 3000;
+  console.log("SUCCESS: Platform database tables created.");
+}
 
-initializeDatabase()
-  .then(() => {
-    app.listen(PORT, "0.0.0.0", () => {
-      console.log(`Server running on port ${PORT}`);
-    });
-  })
-  .catch((error) => {
-    console.error("Database initialization failed:", error.message);
-    process.exit(1);
+// C2B validation callback
+app.post("/c2b/validation", (req, res) => {
+  console.log("C2B validation received.");
+
+  res.json({
+    ResultCode: 0,
+    ResultDesc: "Accepted"
   });
+});
+
+// C2B confirmation callback
+app.post("/c2b/confirmation", (req, res) => {
+  const payment = req.body;
+
+  console.log("C2B payment received:", {
+    receipt: payment.TransID,
+    amount: payment.TransAmount,
+    reference: payment.BillRefNumber
+  });
+
+  res.json({
+    ResultCode: 0,
+    ResultDesc: "Accepted"
+  });
+});
+
+// Start backend
+const PORT = process.env.PORT || 3000;
+
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(`Server running on port ${PORT}`);
+
+  initializeDatabase()
+    .then(() => {
+      console.log("Database initialization completed.");
+    })
+    .catch((error) => {
+      console.error(
+        "DATABASE INITIALIZATION FAILED:",
+        error.message
+      );
+    });
+});
+  
