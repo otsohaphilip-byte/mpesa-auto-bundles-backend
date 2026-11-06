@@ -231,7 +231,7 @@ async function initializeDatabase() {
       reference VARCHAR(100) UNIQUE NOT NULL,
       created_at TIMESTAMPTZ DEFAULT NOW()
     );
-  `);
+  
 
   const PORT = process.env.PORT || 3000;
 
