@@ -181,6 +181,7 @@ footer {
 
   <div class="card">
     <h3>Offer Management</h3>
+<button onclick="showAddOfferForm()">+ Add Offer</button>
     <div id="offerList">Loading offers...</div>
   </div>
 
@@ -440,8 +441,60 @@ if (adminToken) {
   document.getElementById("dashboard").classList.remove("hidden");
   loadAll().catch(() => logout());
 }
+function showAddOfferForm() {
+  document.getElementById("offerList").innerHTML = `
+    <h3>Create New Bundle Offer</h3>
 
+    <label>Offer Name</label>
+    <input id="offerName" placeholder="e.g. 1GB Daily">
+
+    <label>Catalogue Product ID</label>
+    <input id="productId" placeholder="Verified product ID">
+
+    <label>Data Amount</label>
+    <input id="dataAmount" placeholder="e.g. 1GB">
+
+    <label>Selling Price (KSh)</label>
+    <input id="offerPrice" type="number" placeholder="e.g. 50">
+
+    <label>Validity</label>
+    <input id="offerValidity" placeholder="e.g. 24 hours">
+
+    <button onclick="submitNewOffer()">Save Offer</button>
+  `;
+  }
+  async function submitNewOffer() {
+  try {
+    const name = document.getElementById("offerName").value.trim();
+    const product_id = document.getElementById("productId").value.trim();
+    const data_amount = document.getElementById("dataAmount").value.trim();
+    const price = Number(document.getElementById("offerPrice").value);
+    const validity = document.getElementById("offerValidity").value.trim();
+
+    if (!name || !product_id || !data_amount || !price || !validity) {
+      throw new Error("Please fill in all fields.");
+    }
+
+    await request("/api/offers", {
+      method: "POST",
+      body: JSON.stringify({
+        name,
+        product_id,
+        data_amount,
+        price,
+        validity
+      })
+    });
+
+    showMessage("Offer submitted for verification.");
+    await loadOffers();
+
+  } catch (error) {
+    showMessage(error.message, true);
+  }
+  }
 </script>
+  
 </body>
 </html>
   
