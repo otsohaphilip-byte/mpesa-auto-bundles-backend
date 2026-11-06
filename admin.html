@@ -7,9 +7,7 @@
 <title>M-Pesa Auto Bundles | Admin</title>
 
 <style>
-* {
-  box-sizing: border-box;
-}
+* { box-sizing: border-box; }
 
 body {
   margin: 0;
@@ -24,13 +22,10 @@ header {
   padding: 22px 16px;
 }
 
-header h2 {
-  margin: 0 0 6px;
-}
-
-header p {
-  margin: 0;
-  font-size: 13px;
+header img {
+  width: 75px;
+  height: 75px;
+  object-fit: contain;
 }
 
 main {
@@ -45,10 +40,6 @@ main {
   margin-bottom: 16px;
   border-radius: 12px;
   box-shadow: 0 2px 9px #00000010;
-}
-
-h3 {
-  margin-top: 0;
 }
 
 input, button, select {
@@ -71,21 +62,11 @@ button {
   cursor: pointer;
 }
 
-button.secondary {
-  background: #34445b;
-}
+button.secondary { background: #34445b; }
+button.danger { background: #b83232; }
+button:disabled { opacity: 0.5; }
 
-button.danger {
-  background: #b83232;
-}
-
-button:disabled {
-  opacity: 0.5;
-}
-
-.hidden {
-  display: none;
-}
+.hidden { display: none; }
 
 .item {
   border: 1px solid #e1e6ed;
@@ -95,9 +76,7 @@ button:disabled {
   overflow-wrap: anywhere;
 }
 
-.item p {
-  margin: 7px 0;
-}
+.item p { margin: 7px 0; }
 
 .actions {
   display: flex;
@@ -126,14 +105,31 @@ footer {
   color: #667085;
   font-size: 12px;
 }
+
+.login-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.login-row input {
+  flex: 1;
+  min-width: 0;
+}
+
+.login-row button {
+  width: 55px;
+  flex-shrink: 0;
+  font-size: 19px;
+}
 </style>
 </head>
 
 <body>
 
 <header>
-  <img src="/logo.png" alt="M-Pesa Auto Bundles" style="width:75px;height:75px;object-fit:contain;">
-<h2>M-Pesa Auto Bundles</h2>
+  <img src="/logo.png" alt="M-Pesa Auto Bundles">
+  <h2>M-Pesa Auto Bundles</h2>
   <p>Administrator Control Dashboard</p>
 </header>
 
@@ -143,28 +139,29 @@ footer {
   <h3>Administrator Login</h3>
   <p>Sign in using your administrator account.</p>
 
-  <input
-  id="phone"
-  type="tel"
-  placeholder="Administrator phone number"
-  value="0794609364"
->
-
-<div style="display:flex;gap:6px;align-items:center;">
-    type="password"
-    placeholder="Administrator password"
-    style="flex:1;min-width:0;"
-  >
-  <button
-    type="button"
-    onclick="togglePassword()"
-    style="width:auto;padding:13px 18px;"
-  >👁</button>
+  <label>Administrator Phone Number</label>
+  <div class="login-row">
+    <input
+      id="phone"
+      type="password"
+      inputmode="tel"
+      placeholder="Administrator phone number"
+      value="0794609364"
+    >
+    <button type="button" onclick="togglePhone()">👁</button>
   </div>
 
-  <button id="loginButton" onclick="login()">
-    Sign In
-  </button>
+  <label>Administrator Password</label>
+  <div class="login-row">
+    <input
+      id="password"
+      type="password"
+      placeholder="Administrator password"
+    >
+    <button type="button" onclick="togglePassword()">👁</button>
+  </div>
+
+  <button id="loginButton" onclick="login()">Sign In</button>
 </section>
 
 <section id="dashboard" class="hidden">
@@ -172,9 +169,11 @@ footer {
   <div class="card">
     <h3>Welcome, Administrator</h3>
     <p class="status">Administrator access</p>
+
     <button class="secondary" onclick="loadAll()">
       Refresh Dashboard
     </button>
+
     <button class="danger" onclick="logout()">
       Log Out
     </button>
@@ -187,7 +186,7 @@ footer {
 
   <div class="card">
     <h3>Offer Management</h3>
-<button onclick="showAddOfferForm()">+ Add Offer</button>
+    <button onclick="showAddOfferForm()">+ Add Offer</button>
     <div id="offerList">Loading offers...</div>
   </div>
 
@@ -204,12 +203,22 @@ footer {
 <script>
 const API = "https://mpesa-auto-bundles-backend.onrender.com";
 let adminToken = sessionStorage.getItem("adminToken");
-  
-  
+
 function showMessage(message, error = false) {
   const box = document.getElementById("message");
   box.textContent = message;
   box.style.color = error ? "#b83232" : "#087b48";
+}
+
+function togglePhone() {
+  const phone = document.getElementById("phone");
+  phone.type = phone.type === "password" ? "tel" : "password";
+}
+
+function togglePassword() {
+  const password = document.getElementById("password");
+  password.type =
+    password.type === "password" ? "text" : "password";
 }
 
 async function request(path, options = {}) {
@@ -252,6 +261,10 @@ async function login() {
       body: JSON.stringify({ phone, password })
     });
 
+    if (!data.token) {
+      throw new Error("Login did not return an access token.");
+    }
+
     adminToken = data.token;
     sessionStorage.setItem("adminToken", adminToken);
 
@@ -279,7 +292,7 @@ function logout() {
 
   showMessage("You have logged out.");
 }
-
+  
 async function loadAll() {
   await Promise.all([
     loadResellers(),
@@ -294,7 +307,7 @@ async function loadResellers() {
   try {
     const data = await request("/api/admin/resellers");
 
-    if (!data.resellers.length) {
+    if (!data.resellers || !data.resellers.length) {
       box.textContent = "No registered resellers yet.";
       return;
     }
@@ -322,7 +335,8 @@ async function loadResellers() {
       if (reseller.status !== "active") {
         const approve = document.createElement("button");
         approve.textContent = "Approve";
-        approve.onclick = () => updateReseller(reseller.id, "active");
+        approve.onclick = () =>
+          updateReseller(reseller.id, "active");
         actions.appendChild(approve);
       }
 
@@ -330,7 +344,8 @@ async function loadResellers() {
         const suspend = document.createElement("button");
         suspend.textContent = "Suspend";
         suspend.className = "danger";
-        suspend.onclick = () => updateReseller(reseller.id, "suspended");
+        suspend.onclick = () =>
+          updateReseller(reseller.id, "suspended");
         actions.appendChild(suspend);
       }
 
@@ -369,7 +384,7 @@ async function loadOffers() {
   try {
     const data = await request("/api/offers");
 
-    if (!data.offers.length) {
+    if (!data.offers || !data.offers.length) {
       box.textContent = "No offers have been created yet.";
       return;
     }
@@ -384,14 +399,13 @@ async function loadOffers() {
       title.textContent = offer.name;
 
       const price = document.createElement("p");
-      price.textContent = "Price: KSh " + offer.price;
+      price.textContent = "Bingwa Price: KSh " + offer.price;
 
       const product = document.createElement("p");
       product.textContent = "Product: " + offer.bundle_code;
 
       const status = document.createElement("p");
-      status.textContent =
-        "Approval: " + offer.approval_status;
+      status.textContent = "Approval: " + offer.approval_status;
 
       item.append(title, price, product, status);
 
@@ -404,12 +418,14 @@ async function loadOffers() {
 
         const approve = document.createElement("button");
         approve.textContent = "Approve";
-        approve.onclick = () => reviewOffer(offer.id, "approved");
+        approve.onclick = () =>
+          reviewOffer(offer.id, "approved");
 
         const reject = document.createElement("button");
         reject.textContent = "Reject";
         reject.className = "danger";
-        reject.onclick = () => reviewOffer(offer.id, "rejected");
+        reject.onclick = () =>
+          reviewOffer(offer.id, "rejected");
 
         actions.append(approve, reject);
         item.appendChild(actions);
@@ -442,11 +458,6 @@ async function reviewOffer(id, approval_status) {
   }
 }
 
-if (adminToken) {
-  document.getElementById("loginSection").classList.add("hidden");
-  document.getElementById("dashboard").classList.remove("hidden");
-  loadAll().catch(() => logout());
-}
 function showAddOfferForm() {
   document.getElementById("offerList").innerHTML = `
     <h3>Create New Bundle Offer</h3>
@@ -454,41 +465,44 @@ function showAddOfferForm() {
     <label>Offer Name</label>
     <input id="offerName" placeholder="e.g. 1GB Daily">
 
-    <label>Catalogue Product ID</label>
-    <input id="productId" placeholder="Verified product ID">
+    <label>Verified Catalogue Product ID</label>
+    <input id="productId" placeholder="Catalogue product ID">
 
-    <label>Data Amount</label>
-    <input id="dataAmount" placeholder="e.g. 1GB">
-
-    <label>Selling Price (KSh)</label>
-    <input id="offerPrice" type="number" placeholder="e.g. 50">
-
-    <label>Validity</label>
-    <input id="offerValidity" placeholder="e.g. 24 hours">
+    <label>Your Bingwa Selling Price (KSh)</label>
+    <input id="offerPrice" type="number" min="1"
+      placeholder="Enter selling price">
 
     <button onclick="submitNewOffer()">Save Offer</button>
+    <button class="secondary" onclick="loadOffers()">Cancel</button>
   `;
-  }
-  async function submitNewOffer() {
-  try {
-    const name = document.getElementById("offerName").value.trim();
-    const product_id = document.getElementById("productId").value.trim();
-    const data_amount = document.getElementById("dataAmount").value.trim();
-    const price = Number(document.getElementById("offerPrice").value);
-    const validity = document.getElementById("offerValidity").value.trim();
+}
 
-    if (!name || !product_id || !data_amount || !price || !validity) {
-      throw new Error("Please fill in all fields.");
+async function submitNewOffer() {
+  try {
+    const name =
+      document.getElementById("offerName").value.trim();
+
+    const catalog_product_id =
+      document.getElementById("productId").value.trim();
+
+    const price =
+      Number(document.getElementById("offerPrice").value);
+
+    if (
+      !name ||
+      !catalog_product_id ||
+      !Number.isFinite(price) ||
+      price <= 0
+    ) {
+      throw new Error("Enter a valid offer name, product ID and price.");
     }
 
     await request("/api/offers", {
       method: "POST",
       body: JSON.stringify({
         name,
-        product_id,
-        data_amount,
-        price,
-        validity
+        catalog_product_id,
+        price
       })
     });
 
@@ -498,13 +512,15 @@ function showAddOfferForm() {
   } catch (error) {
     showMessage(error.message, true);
   }
-  }
-  function togglePassword() {
-  const password = document.getElementById("password");
-  password.type = password.type === "password" ? "text" : "password";
-  }
+}
+
+if (adminToken) {
+  document.getElementById("loginSection").classList.add("hidden");
+  document.getElementById("dashboard").classList.remove("hidden");
+  loadAll().catch(() => logout());
+}
+
 </script>
-  
 </body>
 </html>
   
