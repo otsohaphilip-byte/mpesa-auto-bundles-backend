@@ -268,6 +268,11 @@ app.get("/", (req, res) => {
   res.send("M-Pesa Auto Bundles backend is running.");
 });
 
+// ADMINISTRATOR DASHBOARD
+app.get("/admin", (req, res) => {
+  res.sendFile(__dirname + "/admin.html");
+});
+
 // HEALTH CHECK
 app.get("/health", (req, res) => {
   res.json({
