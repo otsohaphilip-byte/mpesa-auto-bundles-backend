@@ -152,7 +152,89 @@ app.post("/c2b/confirmation", (req, res) => {
     ResultDesc: "Accepted"
   });
 });
+// Create the platform database tables
+async function initializeDatabase() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS resellers (
+      id BIGSERIAL PRIMARY KEY,
+      name VARCHAR(150) NOT NULL,
+      phone VARCHAR(20) UNIQUE NOT NULL,
+      status VARCHAR(20) DEFAULT 'pending',
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
 
+    CREATE TABLE IF NOT EXISTS offers (
+      id BIGSERIAL PRIMARY KEY,
+      reseller_id BIGINT REFERENCES resellers(id),
+      name VARCHAR(150) NOT NULL,
+      product_type VARCHAR(20) NOT NULL,
+      price NUMERIC(12,2) NOT NULL CHECK (price > 0),
+      bundle_code VARCHAR(100),
+      active BOOLEAN DEFAULT TRUE,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS orders (
+      id BIGSERIAL PRIMARY KEY,
+      order_reference VARCHAR(100) UNIQUE NOT NULL,
+      reseller_id BIGINT REFERENCES resellers(id),
+      offer_id BIGINT REFERENCES offers(id),
+      customer_phone VARCHAR(20) NOT NULL,
+      amount NUMERIC(12,2) NOT NULL,
+      status VARCHAR(30) DEFAULT 'pending',
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS payments (
+      id BIGSERIAL PRIMARY KEY,
+      order_id BIGINT REFERENCES orders(id),
+      mpesa_receipt VARCHAR(50) UNIQUE NOT NULL,
+      amount NUMERIC(12,2) NOT NULL,
+      phone VARCHAR(20),
+      reference VARCHAR(100),
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS token_wallets (
+      id BIGSERIAL PRIMARY KEY,
+      reseller_id BIGINT UNIQUE REFERENCES resellers(id),
+      balance BIGINT DEFAULT 0 CHECK (balance >= 0)
+    );
+
+    CREATE TABLE IF NOT EXISTS token_transactions (
+      id BIGSERIAL PRIMARY KEY,
+      reseller_id BIGINT REFERENCES resellers(id),
+      transaction_type VARCHAR(30) NOT NULL,
+      amount BIGINT NOT NULL,
+      reference VARCHAR(100) UNIQUE NOT NULL,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS subscriptions (
+      id BIGSERIAL PRIMARY KEY,
+      reseller_id BIGINT REFERENCES resellers(id),
+      plan VARCHAR(30) NOT NULL,
+      amount NUMERIC(12,2) NOT NULL,
+      payer_name VARCHAR(150),
+      payer_phone VARCHAR(20),
+      status VARCHAR(30) DEFAULT 'pending',
+      expires_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS airtime_ledger (
+      id BIGSERIAL PRIMARY KEY,
+      owner_type VARCHAR(20) NOT NULL,
+      reseller_id BIGINT REFERENCES resellers(id),
+      transaction_type VARCHAR(30) NOT NULL,
+      amount NUMERIC(12,2) NOT NULL,
+      reference VARCHAR(100) UNIQUE NOT NULL,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+  `);
+
+  console.log("Platform database tables created successfully.");
+  }
 // Start server
 const PORT = process.env.PORT || 3000;
 
