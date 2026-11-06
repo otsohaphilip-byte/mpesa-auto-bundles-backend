@@ -3,6 +3,7 @@ const express = require("express");
 const { Pool } = require("pg");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
+const crypto = require("crypto");
 require("dotenv").config();
 
 const app = express();
@@ -11,20 +12,16 @@ app.use(express.json({ limit: "100kb" }));
 
 app.use((req, res, next) => {
   res.header("Access-Control-Allow-Origin", "*");
-  res.header("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  res.header("Access-Control-Allow-Methods", "GET, POST, PATCH, OPTIONS");
   res.header(
     "Access-Control-Allow-Headers",
     "Content-Type, x-test-key, Authorization"
   );
 
-  if (req.method === "OPTIONS") {
-    return res.sendStatus(204);
-  }
-
+  if (req.method === "OPTIONS") return res.sendStatus(204);
   next();
 });
 
-// DATABASE CONNECTION
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL
 });
@@ -33,7 +30,6 @@ pool.on("error", (error) => {
   console.error("Database error:", error.message);
 });
 
-// NORMALIZE KENYAN PHONE NUMBERS
 function normalizePhone(phone) {
   let digits = String(phone || "").replace(/\D/g, "");
 
@@ -50,7 +46,24 @@ function normalizePhone(phone) {
   return "254" + digits;
 }
 
-// DATABASE TABLES
+function sendError(res, status, message) {
+  return res.status(status).json({
+    status: "ERROR",
+    message
+  });
+}
+
+function createToken(payload) {
+  if (!process.env.JWT_SECRET) {
+    throw new Error("JWT security is not configured.");
+  }
+
+  return jwt.sign(payload, process.env.JWT_SECRET, {
+    expiresIn: "12h"
+  });
+}
+
+// DATABASE INITIALIZATION AND SAFE MIGRATIONS
 async function initializeDatabase() {
   if (!process.env.DATABASE_URL) {
     throw new Error("DATABASE_URL is missing.");
@@ -141,9 +154,36 @@ async function initializeDatabase() {
       reference VARCHAR(100) UNIQUE NOT NULL,
       created_at TIMESTAMPTZ DEFAULT NOW()
     );
+
+    CREATE TABLE IF NOT EXISTS product_catalog (
+      id BIGSERIAL PRIMARY KEY,
+      product_name VARCHAR(150) NOT NULL,
+      product_type VARCHAR(20) NOT NULL,
+      bundle_code VARCHAR(100) UNIQUE NOT NULL,
+      bundle_size VARCHAR(100),
+      validity VARCHAR(100),
+      supplier_name VARCHAR(150),
+      verified BOOLEAN DEFAULT FALSE,
+      active BOOLEAN DEFAULT FALSE,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    ALTER TABLE offers
+      ADD COLUMN IF NOT EXISTS catalog_product_id BIGINT
+      REFERENCES product_catalog(id);
+
+    ALTER TABLE offers
+      ADD COLUMN IF NOT EXISTS approval_status VARCHAR(20)
+      DEFAULT 'pending';
+
+    CREATE INDEX IF NOT EXISTS idx_orders_reseller
+      ON orders(reseller_id);
+
+    CREATE INDEX IF NOT EXISTS idx_offers_reseller
+      ON offers(reseller_id);
   `);
 
-  console.log("SUCCESS: Database tables created.");
+  console.log("Database initialization completed.");
 }
 
 // TEST SECURITY
@@ -151,24 +191,18 @@ function checkTestSecret(req, res, next) {
   const secret = process.env.MPESA_TEST_SECRET;
 
   if (!secret || req.get("x-test-key") !== secret) {
-    return res.status(401).json({
-      status: "ERROR",
-      message: "Not authorized."
-    });
+    return sendError(res, 401, "Not authorized.");
   }
 
   next();
 }
 
-// RESELLER LOGIN SECURITY
-function authenticateReseller(req, res, next) {
+// GENERAL JWT AUTHENTICATION
+function authenticateToken(req, res, next) {
   const secret = process.env.JWT_SECRET;
 
   if (!secret) {
-    return res.status(503).json({
-      status: "ERROR",
-      message: "Login security is not configured."
-    });
+    return sendError(res, 503, "Login security is not configured.");
   }
 
   const authorization = req.headers.authorization || "";
@@ -176,22 +210,57 @@ function authenticateReseller(req, res, next) {
     ? authorization.substring(7)
     : "";
 
-  if (!token) {
-    return res.status(401).json({
-      status: "ERROR",
-      message: "Please log in."
-    });
-  }
+  if (!token) return sendError(res, 401, "Please log in.");
 
   try {
-    req.reseller = jwt.verify(token, secret);
+    req.user = jwt.verify(token, secret);
     next();
   } catch (error) {
-    return res.status(401).json({
-      status: "ERROR",
-      message: "Invalid or expired login session."
-    });
+    return sendError(res, 401, "Invalid or expired login session.");
   }
+}
+
+// RESELLER AUTHENTICATION
+async function authenticateReseller(req, res, next) {
+  authenticateToken(req, res, async () => {
+    try {
+      if (
+        !req.user.resellerId ||
+        req.user.role === "admin"
+      ) {
+        return sendError(res, 403, "Reseller access required.");
+      }
+
+      const result = await pool.query(
+        "SELECT id, status FROM resellers WHERE id = $1",
+        [req.user.resellerId]
+      );
+
+      if (
+        result.rows.length === 0 ||
+        result.rows[0].status !== "active"
+      ) {
+        return sendError(res, 403, "Reseller account is not active.");
+      }
+
+      req.reseller = result.rows[0];
+      next();
+    } catch (error) {
+      console.error("Reseller authentication error:", error.message);
+      return sendError(res, 500, "Could not verify reseller account.");
+    }
+  });
+}
+
+// ADMIN AUTHENTICATION
+function authenticateAdmin(req, res, next) {
+  authenticateToken(req, res, () => {
+    if (req.user.role !== "admin") {
+      return sendError(res, 403, "Administrator access required.");
+    }
+
+    next();
+  });
 }
 
 // HOMEPAGE
@@ -240,7 +309,6 @@ async function getDarajaAccessToken() {
   return data.access_token;
 }
 
-// DARAJA TEST
 app.get("/api/mpesa/auth-check", checkTestSecret, async (req, res) => {
   try {
     await getDarajaAccessToken();
@@ -251,20 +319,14 @@ app.get("/api/mpesa/auth-check", checkTestSecret, async (req, res) => {
     });
   } catch (error) {
     console.error("Daraja error:", error.message);
-
-    res.status(502).json({
-      status: "ERROR",
-      message: "Daraja authentication failed."
-    });
+    sendError(res, 502, "Daraja authentication failed.");
   }
 });
 
 // DATABASE TEST
 app.get("/api/db-check", checkTestSecret, async (req, res) => {
   try {
-    const result = await pool.query(
-      "SELECT NOW() AS database_time"
-    );
+    const result = await pool.query("SELECT NOW() AS database_time");
 
     res.json({
       status: "OK",
@@ -273,13 +335,143 @@ app.get("/api/db-check", checkTestSecret, async (req, res) => {
     });
   } catch (error) {
     console.error("Database test error:", error.message);
-
-    res.status(500).json({
-      status: "ERROR",
-      message: "Database connection failed."
-    });
+    sendError(res, 500, "Database connection failed.");
   }
 });
+
+// ADMINISTRATOR LOGIN
+app.post("/api/admin/login", async (req, res) => {
+  const { phone, password } = req.body;
+
+  if (
+    typeof phone !== "string" ||
+    typeof password !== "string"
+  ) {
+    return sendError(res, 400, "Phone number and password are required.");
+  }
+
+  const configuredPhone = process.env.ADMIN_PHONE;
+  const configuredPassword = process.env.ADMIN_PASSWORD;
+
+  if (!configuredPhone || !configuredPassword || !process.env.JWT_SECRET) {
+    return sendError(res, 503, "Administrator security is not configured.");
+  }
+
+  try {
+    const submittedPhone = normalizePhone(phone);
+    const expectedPhone = normalizePhone(configuredPhone);
+
+    const phoneMatches = submittedPhone === expectedPhone;
+
+    const submittedPassword = Buffer.from(password);
+    const expectedPassword = Buffer.from(configuredPassword);
+
+    const passwordMatches =
+      submittedPassword.length === expectedPassword.length &&
+      crypto.timingSafeEqual(submittedPassword, expectedPassword);
+
+    if (!phoneMatches || !passwordMatches) {
+      return sendError(res, 401, "Incorrect administrator credentials.");
+    }
+
+    const token = createToken({
+      role: "admin"
+    });
+
+    res.json({
+      status: "OK",
+      message: "Administrator login successful.",
+      token,
+      administrator: {
+        phone: expectedPhone,
+        role: "admin"
+      }
+    });
+  } catch (error) {
+    if (error.message.includes("valid Kenyan mobile")) {
+      return sendError(res, 400, error.message);
+    }
+
+    console.error("Administrator login error:", error.message);
+    sendError(res, 500, "Administrator login failed.");
+  }
+});
+
+// ADMINISTRATOR PROFILE
+app.get("/api/admin/me", authenticateAdmin, (req, res) => {
+  res.json({
+    status: "OK",
+    administrator: {
+      phone: process.env.ADMIN_PHONE,
+      role: "admin"
+    }
+  });
+});
+
+// ADMIN: VIEW ALL RESELLERS
+app.get("/api/admin/resellers", authenticateAdmin, async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT
+        r.id,
+        r.name,
+        r.phone,
+        r.status,
+        r.created_at
+      FROM resellers r
+      ORDER BY r.created_at DESC
+    `);
+
+    res.json({
+      status: "OK",
+      resellers: result.rows
+    });
+  } catch (error) {
+    console.error("Reseller list error:", error.message);
+    sendError(res, 500, "Could not load reseller accounts.");
+  }
+});
+
+// ADMIN: APPROVE OR SUSPEND RESELLER
+app.patch(
+  "/api/admin/resellers/:id/status",
+  authenticateAdmin,
+  async (req, res) => {
+    const { status } = req.body;
+    const resellerId = req.params.id;
+
+    if (!/^\d+$/.test(resellerId)) {
+      return sendError(res, 400, "Invalid reseller ID.");
+    }
+
+    if (!["active", "suspended", "pending"].includes(status)) {
+      return sendError(res, 400, "Invalid reseller status.");
+    }
+
+    try {
+      const result = await pool.query(
+        `UPDATE resellers
+         SET status = $1
+         WHERE id = $2
+         RETURNING id, name, phone, status`,
+        [status, resellerId]
+      );
+
+      if (result.rows.length === 0) {
+        return sendError(res, 404, "Reseller not found.");
+      }
+
+      res.json({
+        status: "OK",
+        message: "Reseller status updated.",
+        reseller: result.rows[0]
+      });
+    } catch (error) {
+      console.error("Reseller status error:", error.message);
+      sendError(res, 500, "Could not update reseller status.");
+    }
+  }
+);
 
 // RESELLER REGISTRATION
 app.post("/api/resellers/register", async (req, res) => {
@@ -293,10 +485,11 @@ app.post("/api/resellers/register", async (req, res) => {
     password.length < 8 ||
     password.length > 128
   ) {
-    return res.status(400).json({
-      status: "ERROR",
-      message: "Enter your name, valid phone number and password of at least 8 characters."
-    });
+    return sendError(
+      res,
+      400,
+      "Enter your name, valid phone number and password of at least 8 characters."
+    );
   }
 
   let client;
@@ -306,12 +499,11 @@ app.post("/api/resellers/register", async (req, res) => {
     const passwordHash = await bcrypt.hash(password, 12);
 
     client = await pool.connect();
-
     await client.query("BEGIN");
 
     const resellerResult = await client.query(
       `INSERT INTO resellers (name, phone, status)
-       VALUES ($1, $2, 'active')
+       VALUES ($1, $2, 'pending')
        RETURNING id, name, phone, status`,
       [name.trim(), normalizedPhone]
     );
@@ -335,36 +527,24 @@ app.post("/api/resellers/register", async (req, res) => {
 
     res.status(201).json({
       status: "OK",
-      message: "Reseller registration successful.",
-      reseller: reseller
+      message: "Registration received. Await administrator approval.",
+      reseller
     });
-
   } catch (error) {
     if (client) {
       await client.query("ROLLBACK").catch(() => {});
     }
 
     if (error.code === "23505") {
-      return res.status(409).json({
-        status: "ERROR",
-        message: "This phone number is already registered."
-      });
+      return sendError(res, 409, "This phone number is already registered.");
     }
 
     if (error.message.includes("valid Kenyan mobile")) {
-      return res.status(400).json({
-        status: "ERROR",
-        message: error.message
-      });
+      return sendError(res, 400, error.message);
     }
 
     console.error("Registration error:", error.message);
-
-    res.status(500).json({
-      status: "ERROR",
-      message: "Registration failed. Please try again."
-    });
-
+    sendError(res, 500, "Registration failed. Please try again.");
   } finally {
     if (client) client.release();
   }
@@ -379,17 +559,11 @@ app.post("/api/resellers/login", async (req, res) => {
     typeof password !== "string" ||
     !password
   ) {
-    return res.status(400).json({
-      status: "ERROR",
-      message: "Phone number and password are required."
-    });
+    return sendError(res, 400, "Phone number and password are required.");
   }
 
   if (!process.env.JWT_SECRET) {
-    return res.status(503).json({
-      status: "ERROR",
-      message: "Login security is not configured."
-    });
+    return sendError(res, 503, "Login security is not configured.");
   }
 
   try {
@@ -410,10 +584,7 @@ app.post("/api/resellers/login", async (req, res) => {
     );
 
     if (result.rows.length === 0) {
-      return res.status(401).json({
-        status: "ERROR",
-        message: "Incorrect phone number or password."
-      });
+      return sendError(res, 401, "Incorrect phone number or password.");
     }
 
     const reseller = result.rows[0];
@@ -424,92 +595,257 @@ app.post("/api/resellers/login", async (req, res) => {
     );
 
     if (!passwordMatches) {
-      return res.status(401).json({
-        status: "ERROR",
-        message: "Incorrect phone number or password."
-      });
+      return sendError(res, 401, "Incorrect phone number or password.");
     }
 
     if (reseller.status !== "active") {
-      return res.status(403).json({
-        status: "ERROR",
-        message: "Your reseller account is not active."
-      });
+      return sendError(
+        res,
+        403,
+        "Your account is awaiting administrator approval or is suspended."
+      );
     }
 
-    const token = jwt.sign(
-      { resellerId: reseller.id },
-      process.env.JWT_SECRET,
-      { expiresIn: "12h" }
-    );
+    const token = createToken({
+      role: "reseller",
+      resellerId: reseller.id
+    });
 
     res.json({
       status: "OK",
       message: "Login successful.",
-      token: token,
+      token,
       reseller: {
         id: reseller.id,
         name: reseller.name,
         phone: reseller.phone
       }
     });
-
   } catch (error) {
     if (error.message.includes("valid Kenyan mobile")) {
-      return res.status(400).json({
-        status: "ERROR",
-        message: error.message
-      });
+      return sendError(res, 400, error.message);
     }
 
     console.error("Login error:", error.message);
-
-    res.status(500).json({
-      status: "ERROR",
-      message: "Login failed. Please try again."
-    });
+    sendError(res, 500, "Login failed. Please try again.");
   }
 });
 
 // PRIVATE RESELLER PROFILE
+app.get("/api/resellers/me", authenticateReseller, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT id, name, phone, status, created_at
+       FROM resellers
+       WHERE id = $1`,
+      [req.reseller.id]
+    );
+
+    if (result.rows.length === 0) {
+      return sendError(res, 404, "Reseller account not found.");
+    }
+
+    res.json({
+      status: "OK",
+      reseller: result.rows[0]
+    });
+  } catch (error) {
+    console.error("Profile error:", error.message);
+    sendError(res, 500, "Could not load reseller profile.");
+  }
+});
+
+// VIEW VERIFIED PRODUCT CATALOGUE
 app.get(
-  "/api/resellers/me",
-  authenticateReseller,
+  "/api/catalog",
+  authenticateToken,
   async (req, res) => {
     try {
-      const result = await pool.query(
-        `SELECT id, name, phone, status, created_at
-         FROM resellers
-         WHERE id = $1`,
-        [req.reseller.resellerId]
-      );
-
-      if (result.rows.length === 0) {
-        return res.status(404).json({
-          status: "ERROR",
-          message: "Reseller account not found."
-        });
+      if (
+        req.user.role !== "admin" &&
+        !req.user.resellerId
+      ) {
+        return sendError(res, 403, "Access denied.");
       }
+
+      const result = await pool.query(
+        `SELECT id, product_name, product_type,
+                bundle_code, bundle_size, validity,
+                supplier_name
+         FROM product_catalog
+         WHERE active = TRUE AND verified = TRUE
+         ORDER BY product_name`
+      );
 
       res.json({
         status: "OK",
-        reseller: result.rows[0]
+        products: result.rows
       });
-
     } catch (error) {
-      console.error("Profile error:", error.message);
-
-      res.status(500).json({
-        status: "ERROR",
-        message: "Could not load reseller profile."
-      });
+      console.error("Catalogue error:", error.message);
+      sendError(res, 500, "Could not load product catalogue.");
     }
   }
 );
 
-// C2B VALIDATION CALLBACK
-app.post("/c2b/validation", (req, res) => {
-  console.log("C2B validation received.");
+// CREATE A CUSTOM SELLING OFFER
+app.post("/api/offers", authenticateToken, async (req, res) => {
+  const { catalog_product_id, name, price } = req.body;
+
+  if (
+    !/^\d+$/.test(String(catalog_product_id || "")) ||
+    typeof name !== "string" ||
+    !name.trim() ||
+    name.length > 150 ||
+    !Number.isFinite(Number(price)) ||
+    Number(price) <= 0 ||
+    Number(price) > 1000000
+  ) {
+    return sendError(res, 400, "Enter a valid product, offer name and selling price.");
+  }
+
+  const isAdmin = req.user.role === "admin";
+  const resellerId = isAdmin ? null : req.user.resellerId;
+
+  if (!isAdmin && !resellerId) {
+    return sendError(res, 403, "Access denied.");
+  }
+
+  try {
+    const productResult = await pool.query(
+      `SELECT id, product_name, product_type, bundle_code
+       FROM product_catalog
+       WHERE id = $1
+         AND active = TRUE
+         AND verified = TRUE`,
+      [catalog_product_id]
+    );
+
+    if (productResult.rows.length === 0) {
+      return sendError(
+        res,
+        400,
+        "This product is not in the verified active catalogue."
+      );
+    }
+
+    const product = productResult.rows[0];
+
+    const approvalStatus = isAdmin ? "approved" : "pending";
+    const active = isAdmin;
+
+    const result = await pool.query(
+      `INSERT INTO offers
+       (reseller_id, name, product_type, price,
+        bundle_code, catalog_product_id,
+        approval_status, active)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       RETURNING *`,
+      [
+        resellerId,
+        name.trim(),
+        product.product_type,
+        Number(price),
+        product.bundle_code,
+        product.id,
+        approvalStatus,
+        active
+      ]
+    );
+
+    res.status(201).json({
+      status: "OK",
+      message: isAdmin
+        ? "Administrator offer created."
+        : "Offer submitted for administrator approval.",
+      offer: result.rows[0]
+    });
+  } catch (error) {
+    console.error("Offer creation error:", error.message);
+    sendError(res, 500, "Could not create offer.");
+  }
+});
+
+// VIEW OFFERS: ADMIN SEES ALL; RESELLER SEES OWN
+app.get("/api/offers", authenticateToken, async (req, res) => {
+  try {
+    let result;
+
+    if (req.user.role === "admin") {
+      result = await pool.query(
+        `SELECT * FROM offers ORDER BY created_at DESC`
+      );
+    } else if (req.user.resellerId) {
+      result = await pool
+     .query(
+        `SELECT * FROM offers
+         WHERE reseller_id = $1 OR reseller_id IS NULL
+         ORDER BY created_at DESC`,
+        [req.user.resellerId]
+      );
+    } else {
+      return sendError(res, 403, "Access denied.");
+    }
+
+    res.json({
+      status: "OK",
+      offers: result.rows
+    });
+  } catch (error) {
+    console.error("Offers list error:", error.message);
+    sendError(res, 500, "Could not load offers.");
+  }
+});
+
+// ADMIN: APPROVE OR REJECT A RESELLER OFFER
+app.patch(
+  "/api/admin/offers/:id/approval",
+  authenticateAdmin,
+  async (req, res) => {
+    const { approval_status } = req.body;
+    const offerId = req.params.id;
+
+    if (!/^\d+$/.test(offerId)) {
+      return sendError(res, 400, "Invalid offer ID.");
+    }
+
+    if (!["approved", "rejected"].includes(approval_status)) {
+      return sendError(res, 400, "Choose approved or rejected.");
+    }
+
+    try {
+      const result = await pool.query(
+        `UPDATE offers
+         SET approval_status = $1,
+             active = $2
+         WHERE id = $3
+         RETURNING *`,
+        [
+          approval_status,
+          approval_status === "approved",
+          offerId
+        ]
+      );
+
+      if (result.rows.length === 0) {
+        return sendError(res, 404, "Offer not found.");
+      }
+
+      res.json({
+        status: "OK",
+        message: "Offer review completed.",
+        offer: result.rows[0]
+      });
+    } catch (error) {
+      console.error("Offer approval error:", error.message);
+      sendError(res, 500, "Could not update offer.");
+    }
+  }
+);
+
+// SAFARICOM C2B VALIDATION CALLBACK
+app.post("/api/mpesa/c2b/validation", (req, res) => {
+  console.log("C2B validation callback received.");
 
   res.json({
     ResultCode: 0,
@@ -517,37 +853,39 @@ app.post("/c2b/validation", (req, res) => {
   });
 });
 
-// C2B CONFIRMATION CALLBACK
-app.post("/c2b/confirmation", (req, res) => {
-  const payment = req.body;
+// SAFARICOM C2B CONFIRMATION CALLBACK
+app.post("/api/mpesa/c2b/confirmation", async (req, res) => {
+  try {
+    console.log(
+      "C2B confirmation callback received:",
+      JSON.stringify(req.body)
+    );
 
-  console.log("C2B payment received:", {
-    receipt: payment.TransID,
-    amount: payment.TransAmount,
-    reference: payment.BillRefNumber
-  });
+    res.json({
+      ResultCode: 0,
+      ResultDesc: "Confirmation received"
+    });
+  } catch (error) {
+    console.error("C2B callback error:", error.message);
 
-  res.json({
-    ResultCode: 0,
-    ResultDesc: "Accepted"
-  });
+    res.json({
+      ResultCode: 0,
+      ResultDesc: "Received"
+    });
+  }
 });
 
-// START BACKEND
+// START SERVER AFTER DATABASE INITIALIZATION
 const PORT = process.env.PORT || 3000;
 
-app.listen(PORT, "0.0.0.0", () => {
-  console.log(`Server running on port ${PORT}`);
-
-  initializeDatabase()
-    .then(() => {
-      console.log("Database initialization completed.");
-    })
-    .catch((error) => {
-      console.error(
-        "DATABASE INITIALIZATION FAILED:",
-        error.message
-      );
+initializeDatabase()
+  .then(() => {
+    app.listen(PORT, () => {
+      console.log(`M-Pesa Auto Bundles backend running on port ${PORT}`);
     });
-});
-                              
+  })
+  .catch((error) => {
+    console.error("Server startup failed:", error.message);
+    process.exit(1);
+  });
+        
