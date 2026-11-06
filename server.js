@@ -90,7 +90,31 @@ app.get("/api/mpesa/auth-check", async (req, res) => {
     });
   }
 });
+// Safaricom C2B validation callback (Sandbox testing)
+app.post("/c2b/validation", (req, res) => {
+  console.log("C2B validation request received");
 
+  res.json({
+    ResultCode: 0,
+    ResultDesc: "Accepted"
+  });
+});
+
+// Safaricom C2B payment confirmation callback
+app.post("/c2b/confirmation", (req, res) => {
+  const payment = req.body;
+
+  console.log("C2B payment received:", {
+    receipt: payment.TransID,
+    amount: payment.TransAmount,
+    reference: payment.BillRefNumber
+  });
+
+  res.json({
+    ResultCode: 0,
+    ResultDesc: "Accepted"
+  });
+});
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, "0.0.0.0", () => {
