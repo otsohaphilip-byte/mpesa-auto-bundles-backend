@@ -152,6 +152,7 @@ app.post("/c2b/confirmation", (req, res) => {
     ResultDesc: "Accepted"
   });
 });
+`);
 // Create the platform database tables
 async function initializeDatabase() {
   await pool.query(`
@@ -231,7 +232,7 @@ async function initializeDatabase() {
       reference VARCHAR(100) UNIQUE NOT NULL,
       created_at TIMESTAMPTZ DEFAULT NOW()
     );
-  
+  `);
 
   const PORT = process.env.PORT || 3000;
 
