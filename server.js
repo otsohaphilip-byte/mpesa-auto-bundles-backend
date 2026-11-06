@@ -270,6 +270,9 @@ app.get("/", (req, res) => {
 
 // ADMINISTRATOR DASHBOARD
 app.get("/admin", (req, res) => {
+  app.get("/logo.png", (req, res) => {
+  res.sendFile(__dirname + "/logo.png");
+});
   res.sendFile(__dirname + "/admin.html");
 });
 
