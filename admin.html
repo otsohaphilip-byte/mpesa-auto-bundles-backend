@@ -143,18 +143,19 @@ footer {
   <h3>Administrator Login</h3>
   <p>Sign in using your administrator account.</p>
 
-  <input
-    id="phone"
-    type="tel"
-    placeholder="Administrator phone number"
-    value="0794609364"
-  >
-
+  <div style="display:flex;gap:6px;align-items:center;">
   <input
     id="password"
     type="password"
     placeholder="Administrator password"
+    style="flex:1;min-width:0;"
   >
+  <button
+    type="button"
+    onclick="togglePassword()"
+    style="width:auto;padding:13px 18px;"
+  >👁</button>
+  </div>
 
   <button id="loginButton" onclick="login()">
     Sign In
@@ -492,6 +493,10 @@ function showAddOfferForm() {
   } catch (error) {
     showMessage(error.message, true);
   }
+  }
+  function togglePassword() {
+  const password = document.getElementById("password");
+  password.type = password.type === "password" ? "text" : "password";
   }
 </script>
   
