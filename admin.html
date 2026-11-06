@@ -1,0 +1,446 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>M-Pesa Auto Bundles | Admin</title>
+
+<style>
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: Arial, sans-serif;
+  background: #f2f5f9;
+  color: #172033;
+}
+
+header {
+  background: #087b48;
+  color: white;
+  padding: 22px 16px;
+}
+
+header h2 {
+  margin: 0 0 6px;
+}
+
+header p {
+  margin: 0;
+  font-size: 13px;
+}
+
+main {
+  max-width: 850px;
+  margin: 22px auto;
+  padding: 12px;
+}
+
+.card {
+  background: white;
+  padding: 18px;
+  margin-bottom: 16px;
+  border-radius: 12px;
+  box-shadow: 0 2px 9px #00000010;
+}
+
+h3 {
+  margin-top: 0;
+}
+
+input, button, select {
+  width: 100%;
+  padding: 13px;
+  margin: 7px 0;
+  border-radius: 7px;
+  font-size: 15px;
+}
+
+input, select {
+  border: 1px solid #ccd3dd;
+}
+
+button {
+  border: 0;
+  background: #087b48;
+  color: white;
+  font-weight: bold;
+  cursor: pointer;
+}
+
+button.secondary {
+  background: #34445b;
+}
+
+button.danger {
+  background: #b83232;
+}
+
+button:disabled {
+  opacity: 0.5;
+}
+
+.hidden {
+  display: none;
+}
+
+.item {
+  border: 1px solid #e1e6ed;
+  border-radius: 8px;
+  padding: 13px;
+  margin: 10px 0;
+  overflow-wrap: anywhere;
+}
+
+.item p {
+  margin: 7px 0;
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.actions button {
+  flex: 1;
+  min-width: 110px;
+}
+
+.status {
+  color: #087b48;
+  font-weight: bold;
+}
+
+#message {
+  padding: 10px;
+  overflow-wrap: anywhere;
+}
+
+footer {
+  text-align: center;
+  padding: 20px;
+  color: #667085;
+  font-size: 12px;
+}
+</style>
+</head>
+
+<body>
+
+<header>
+  <h2>M-Pesa Auto Bundles</h2>
+  <p>Administrator Control Dashboard</p>
+</header>
+
+<main>
+
+<section id="loginSection" class="card">
+  <h3>Administrator Login</h3>
+  <p>Sign in using your administrator account.</p>
+
+  <input
+    id="phone"
+    type="tel"
+    placeholder="Administrator phone number"
+    value="0794609364"
+  >
+
+  <input
+    id="password"
+    type="password"
+    placeholder="Administrator password"
+  >
+
+  <button id="loginButton" onclick="login()">
+    Sign In
+  </button>
+</section>
+
+<section id="dashboard" class="hidden">
+
+  <div class="card">
+    <h3>Welcome, Administrator</h3>
+    <p class="status">Administrator access</p>
+    <button class="secondary" onclick="loadAll()">
+      Refresh Dashboard
+    </button>
+    <button class="danger" onclick="logout()">
+      Log Out
+    </button>
+  </div>
+
+  <div class="card">
+    <h3>Reseller Management</h3>
+    <div id="resellerList">Loading resellers...</div>
+  </div>
+
+  <div class="card">
+    <h3>Offer Management</h3>
+    <div id="offerList">Loading offers...</div>
+  </div>
+
+</section>
+
+<div id="message" role="status"></div>
+
+</main>
+
+<footer>
+  M-Pesa Auto Bundles Administration
+</footer>
+
+<script>
+const API = "https://mpesa-auto-bundles-backend.onrender.com";
+let adminToken = sessionStorage.getItem("adminToken");
+  
+  
+function showMessage(message, error = false) {
+  const box = document.getElementById("message");
+  box.textContent = message;
+  box.style.color = error ? "#b83232" : "#087b48";
+}
+
+async function request(path, options = {}) {
+  const response = await fetch(API + path, {
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...(adminToken
+        ? { Authorization: "Bearer " + adminToken }
+        : {}),
+      ...(options.headers || {})
+    }
+  });
+
+  const data = await response.json().catch(() => ({}));
+
+  if (!response.ok) {
+    throw new Error(data.message || "Request failed.");
+  }
+
+  return data;
+}
+
+async function login() {
+  const phone = document.getElementById("phone").value.trim();
+  const password = document.getElementById("password").value;
+
+  if (!phone || !password) {
+    showMessage("Enter your phone number and password.", true);
+    return;
+  }
+
+  const button = document.getElementById("loginButton");
+  button.disabled = true;
+  button.textContent = "Signing in...";
+
+  try {
+    const data = await request("/api/admin/login", {
+      method: "POST",
+      body: JSON.stringify({ phone, password })
+    });
+
+    adminToken = data.token;
+    sessionStorage.setItem("adminToken", adminToken);
+
+    document.getElementById("password").value = "";
+    document.getElementById("loginSection").classList.add("hidden");
+    document.getElementById("dashboard").classList.remove("hidden");
+
+    showMessage("Administrator login successful.");
+    await loadAll();
+
+  } catch (error) {
+    showMessage(error.message, true);
+  } finally {
+    button.disabled = false;
+    button.textContent = "Sign In";
+  }
+}
+
+function logout() {
+  sessionStorage.removeItem("adminToken");
+  adminToken = null;
+
+  document.getElementById("dashboard").classList.add("hidden");
+  document.getElementById("loginSection").classList.remove("hidden");
+
+  showMessage("You have logged out.");
+}
+
+async function loadAll() {
+  await Promise.all([
+    loadResellers(),
+    loadOffers()
+  ]);
+}
+
+async function loadResellers() {
+  const box = document.getElementById("resellerList");
+  box.textContent = "Loading resellers...";
+
+  try {
+    const data = await request("/api/admin/resellers");
+
+    if (!data.resellers.length) {
+      box.textContent = "No registered resellers yet.";
+      return;
+    }
+
+    box.innerHTML = "";
+
+    data.resellers.forEach(reseller => {
+      const item = document.createElement("div");
+      item.className = "item";
+
+      const title = document.createElement("strong");
+      title.textContent = reseller.name;
+
+      const phone = document.createElement("p");
+      phone.textContent = "Phone: " + reseller.phone;
+
+      const status = document.createElement("p");
+      status.textContent = "Status: " + reseller.status;
+
+      item.append(title, phone, status);
+
+      const actions = document.createElement("div");
+      actions.className = "actions";
+
+      if (reseller.status !== "active") {
+        const approve = document.createElement("button");
+        approve.textContent = "Approve";
+        approve.onclick = () => updateReseller(reseller.id, "active");
+        actions.appendChild(approve);
+      }
+
+      if (reseller.status !== "suspended") {
+        const suspend = document.createElement("button");
+        suspend.textContent = "Suspend";
+        suspend.className = "danger";
+        suspend.onclick = () => updateReseller(reseller.id, "suspended");
+        actions.appendChild(suspend);
+      }
+
+      item.appendChild(actions);
+      box.appendChild(item);
+    });
+
+  } catch (error) {
+    box.textContent = error.message;
+  }
+}
+
+async function updateReseller(id, status) {
+  if (!confirm("Change this reseller's status to " + status + "?")) {
+    return;
+  }
+
+  try {
+    await request("/api/admin/resellers/" + id + "/status", {
+      method: "PATCH",
+      body: JSON.stringify({ status })
+    });
+
+    showMessage("Reseller status updated.");
+    await loadResellers();
+
+  } catch (error) {
+    showMessage(error.message, true);
+  }
+}
+
+async function loadOffers() {
+  const box = document.getElementById("offerList");
+  box.textContent = "Loading offers...";
+
+  try {
+    const data = await request("/api/offers");
+
+    if (!data.offers.length) {
+      box.textContent = "No offers have been created yet.";
+      return;
+    }
+
+    box.innerHTML = "";
+
+    data.offers.forEach(offer => {
+      const item = document.createElement("div");
+      item.className = "item";
+
+      const title = document.createElement("strong");
+      title.textContent = offer.name;
+
+      const price = document.createElement("p");
+      price.textContent = "Price: KSh " + offer.price;
+
+      const product = document.createElement("p");
+      product.textContent = "Product: " + offer.bundle_code;
+
+      const status = document.createElement("p");
+      status.textContent =
+        "Approval: " + offer.approval_status;
+
+      item.append(title, price, product, status);
+
+      if (
+        offer.approval_status === "pending" &&
+        offer.reseller_id !== null
+      ) {
+        const actions = document.createElement("div");
+        actions.className = "actions";
+
+        const approve = document.createElement("button");
+        approve.textContent = "Approve";
+        approve.onclick = () => reviewOffer(offer.id, "approved");
+
+        const reject = document.createElement("button");
+        reject.textContent = "Reject";
+        reject.className = "danger";
+        reject.onclick = () => reviewOffer(offer.id, "rejected");
+
+        actions.append(approve, reject);
+        item.appendChild(actions);
+      }
+
+      box.appendChild(item);
+    });
+
+  } catch (error) {
+    box.textContent = error.message;
+  }
+}
+
+async function reviewOffer(id, approval_status) {
+  if (!confirm("Are you sure you want to " + approval_status + " this offer?")) {
+    return;
+  }
+
+  try {
+    await request("/api/admin/offers/" + id + "/approval", {
+      method: "PATCH",
+      body: JSON.stringify({ approval_status })
+    });
+
+    showMessage("Offer review completed.");
+    await loadOffers();
+
+  } catch (error) {
+    showMessage(error.message, true);
+  }
+}
+
+if (adminToken) {
+  document.getElementById("loginSection").classList.add("hidden");
+  document.getElementById("dashboard").classList.remove("hidden");
+  loadAll().catch(() => logout());
+}
+
+</script>
+</body>
+</html>
+  
