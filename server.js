@@ -1,23 +1,34 @@
 const express = require("express");
+const { Pool } = require("pg");
 require("dotenv").config();
 
 const app = express();
 
 app.use(express.json());
+
 app.use((req, res, next) => {
   res.header("Access-Control-Allow-Origin", "*");
   res.header("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
   res.header("Access-Control-Allow-Headers", "Content-Type, x-test-key");
+
   if (req.method === "OPTIONS") {
     return res.sendStatus(204);
   }
+
   next();
 });
 
+// PostgreSQL database connection
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL
+});
+
+// Homepage
 app.get("/", (req, res) => {
   res.send("M-Pesa Auto Bundles backend is running.");
 });
 
+// Health check
 app.get("/health", (req, res) => {
   res.json({
     status: "OK",
@@ -25,7 +36,7 @@ app.get("/health", (req, res) => {
   });
 });
 
-// Generate a Safaricom Daraja access token
+// Daraja authentication
 async function getDarajaAccessToken() {
   const key = process.env.MPESA_CONSUMER_KEY;
   const secret = process.env.MPESA_CONSUMER_SECRET;
@@ -56,24 +67,22 @@ async function getDarajaAccessToken() {
   return data.access_token;
 }
 
-// Protected authentication test
-app.get("/api/mpesa/auth-check", async (req, res) => {
+// Protected test routes
+function checkTestSecret(req, res, next) {
   const testSecret = process.env.MPESA_TEST_SECRET;
 
-  if (!testSecret) {
-    return res.status(503).json({
-      status: "ERROR",
-      message: "Test protection is not configured."
-    });
-  }
-
-  if (req.get("x-test-key") !== testSecret) {
+  if (!testSecret || req.get("x-test-key") !== testSecret) {
     return res.status(401).json({
       status: "ERROR",
       message: "Not authorized."
     });
   }
 
+  next();
+}
+
+// Test Daraja authentication
+app.get("/api/mpesa/auth-check", checkTestSecret, async (req, res) => {
   try {
     await getDarajaAccessToken();
 
@@ -86,11 +95,39 @@ app.get("/api/mpesa/auth-check", async (req, res) => {
 
     res.status(502).json({
       status: "ERROR",
-      message: "Daraja authentication failed. Check credentials and settings."
+      message: "Daraja authentication failed."
     });
   }
 });
-// Safaricom C2B validation callback (Sandbox testing)
+
+// Test PostgreSQL connection
+app.get("/api/db-check", checkTestSecret, async (req, res) => {
+  if (!process.env.DATABASE_URL) {
+    return res.status(503).json({
+      status: "ERROR",
+      message: "Database URL is missing."
+    });
+  }
+
+  try {
+    const result = await pool.query("SELECT NOW() AS database_time");
+
+    res.json({
+      status: "OK",
+      message: "PostgreSQL database connection successful.",
+      database_time: result.rows[0].database_time
+    });
+  } catch (error) {
+    console.error("Database connection failed:", error.message);
+
+    res.status(500).json({
+      status: "ERROR",
+      message: "Database connection failed. Check database settings."
+    });
+  }
+});
+
+// C2B validation callback
 app.post("/c2b/validation", (req, res) => {
   console.log("C2B validation request received");
 
@@ -100,7 +137,7 @@ app.post("/c2b/validation", (req, res) => {
   });
 });
 
-// Safaricom C2B payment confirmation callback
+// C2B confirmation callback
 app.post("/c2b/confirmation", (req, res) => {
   const payment = req.body;
 
@@ -115,6 +152,8 @@ app.post("/c2b/confirmation", (req, res) => {
     ResultDesc: "Accepted"
   });
 });
+
+// Start server
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, "0.0.0.0", () => {
