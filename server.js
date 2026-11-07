@@ -1,4 +1,3 @@
-
 const express = require("express");
 const { Pool } = require("pg");
 const bcrypt = require("bcryptjs");
@@ -12,13 +11,19 @@ app.use(express.json({ limit: "100kb" }));
 
 app.use((req, res, next) => {
   res.header("Access-Control-Allow-Origin", "*");
-  res.header("Access-Control-Allow-Methods", "GET, POST, PATCH, OPTIONS");
+  res.header(
+    "Access-Control-Allow-Methods",
+    "GET, POST, PATCH, DELETE, OPTIONS"
+  );
   res.header(
     "Access-Control-Allow-Headers",
     "Content-Type, x-test-key, Authorization"
   );
 
-  if (req.method === "OPTIONS") return res.sendStatus(204);
+  if (req.method === "OPTIONS") {
+    return res.sendStatus(204);
+  }
+
   next();
 });
 
@@ -61,6 +66,29 @@ function createToken(payload) {
   return jwt.sign(payload, process.env.JWT_SECRET, {
     expiresIn: "12h"
   });
+}
+
+// SERIALIZE OFFER PRICE CHANGES AND CHECKS
+async function lockOfferPrices(client) {
+  await client.query(
+    "SELECT pg_advisory_xact_lock($1)",
+    [872341]
+  );
+}
+
+async function hasDuplicateActivePrice(client, price, excludeId = null) {
+  const result = await client.query(
+    `SELECT id
+     FROM offers
+     WHERE active = TRUE
+       AND approval_status = 'approved'
+       AND price = $1
+       AND ($2::BIGINT IS NULL OR id <> $2)
+     LIMIT 1`,
+    [price, excludeId]
+  );
+
+  return result.rows.length > 0;
 }
 
 // DATABASE INITIALIZATION AND SAFE MIGRATIONS
@@ -184,126 +212,115 @@ async function initializeDatabase() {
   `);
 
   console.log("Database initialization completed.");
-}
+    }
+// ==============================
+// AUTHENTICATION MIDDLEWARE
+// ==============================
 
-// TEST SECURITY
-function checkTestSecret(req, res, next) {
-  const secret = process.env.MPESA_TEST_SECRET;
+function authenticateToken(req, res, next) {
+  const header = req.headers.authorization || "";
+  const token = header.startsWith("Bearer ")
+    ? header.slice(7)
+    : null;
 
-  if (!secret || req.get("x-test-key") !== secret) {
-    return sendError(res, 401, "Not authorized.");
+  if (!token) {
+    return res.status(401).json({
+      status: "ERROR",
+      message: "Authentication required."
+    });
   }
 
+  try {
+    req.user = jwt.verify(
+      token,
+      process.env.JWT_SECRET || "change-this-secret"
+    );
+    next();
+  } catch (error) {
+    return res.status(401).json({
+      status: "ERROR",
+      message: "Invalid or expired token."
+    });
+  }
+}
+
+function requireAdmin(req, res, next) {
+  if (req.user.role !== "admin") {
+    return res.status(403).json({
+      status: "ERROR",
+      message: "Administrator access required."
+    });
+  }
   next();
 }
 
-// GENERAL JWT AUTHENTICATION
-function authenticateToken(req, res, next) {
-  const secret = process.env.JWT_SECRET;
-
-  if (!secret) {
-    return sendError(res, 503, "Login security is not configured.");
+function requireReseller(req, res, next) {
+  if (req.user.role !== "reseller") {
+    return res.status(403).json({
+      status: "ERROR",
+      message: "Reseller access required."
+    });
   }
-
-  const authorization = req.headers.authorization || "";
-  const token = authorization.startsWith("Bearer ")
-    ? authorization.substring(7)
-    : "";
-
-  if (!token) return sendError(res, 401, "Please log in.");
-
-  try {
-    req.user = jwt.verify(token, secret);
-    next();
-  } catch (error) {
-    return sendError(res, 401, "Invalid or expired login session.");
-  }
+  next();
 }
 
-// RESELLER AUTHENTICATION
-async function authenticateReseller(req, res, next) {
-  authenticateToken(req, res, async () => {
-    try {
-      if (
-        !req.user.resellerId ||
-        req.user.role === "admin"
-      ) {
-        return sendError(res, 403, "Reseller access required.");
-      }
+// ==============================
+// WEBSITE AND HEALTH ROUTES
+// ==============================
 
-      const result = await pool.query(
-        "SELECT id, status FROM resellers WHERE id = $1",
-        [req.user.resellerId]
-      );
-
-      if (
-        result.rows.length === 0 ||
-        result.rows[0].status !== "active"
-      ) {
-        return sendError(res, 403, "Reseller account is not active.");
-      }
-
-      req.reseller = result.rows[0];
-      next();
-    } catch (error) {
-      console.error("Reseller authentication error:", error.message);
-      return sendError(res, 500, "Could not verify reseller account.");
-    }
-  });
-}
-
-// ADMIN AUTHENTICATION
-function authenticateAdmin(req, res, next) {
-  authenticateToken(req, res, () => {
-    if (req.user.role !== "admin") {
-      return sendError(res, 403, "Administrator access required.");
-    }
-
-    next();
-  });
-}
-
-// HOMEPAGE
 app.get("/", (req, res) => {
-  res.send("M-Pesa Auto Bundles backend is running.");
+  res.send("M-Pesa Auto Bundles API is running.");
 });
 
-// ADMINISTRATOR DASHBOARD
 app.get("/admin", (req, res) => {
-  app.get("/logo.png", (req, res) => {
-  res.sendFile(__dirname + "/logo.png");
-});
-  res.sendFile(__dirname + "/admin.html");
+  res.sendFile(path.join(__dirname, "admin.html"));
 });
 
-// HEALTH CHECK
-app.get("/health", (req, res) => {
-  res.json({
-    status: "OK",
-    application: "M-Pesa Auto Bundles"
-  });
+app.get("/logo.png", (req, res) => {
+  res.sendFile(path.join(__dirname, "logo.png"));
 });
 
-// DARAJA AUTHENTICATION
+app.get("/health", async (req, res) => {
+  try {
+    await pool.query("SELECT 1");
+    res.json({
+      status: "OK",
+      message: "Server and database are running."
+    });
+  } catch (error) {
+    res.status(500).json({
+      status: "ERROR",
+      message: "Database connection failed."
+    });
+  }
+});
+
+// ==============================
+// DARAJA CONNECTION CHECK
+// ==============================
+
 async function getDarajaAccessToken() {
-  const key = process.env.MPESA_CONSUMER_KEY;
-  const secret = process.env.MPESA_CONSUMER_SECRET;
+  const key = process.env.DARAJA_CONSUMER_KEY;
+  const secret = process.env.DARAJA_CONSUMER_SECRET;
 
   if (!key || !secret) {
-    throw new Error("Daraja credentials are missing.");
+    throw new Error("Daraja credentials are not configured.");
   }
 
-  const credentials = Buffer.from(
-    `${key}:${secret}`
-  ).toString("base64");
+  const credentials = Buffer
+    .from(`${key}:${secret}`)
+    .toString("base64");
+
+  const baseUrl =
+    process.env.DARAJA_BASE_URL ||
+    "https://sandbox.safaricom.co.ke";
 
   const response = await fetch(
-    "https://sandbox.safaricom.co.ke/oauth/v1/generate?grant_type=client_credentials",
+    `${baseUrl}/oauth/v1/generate?grant_type=client_credentials`,
     {
       method: "GET",
       headers: {
-        Authorization: `Basic ${credentials}`,
-        Accept: "application/json"
+        Authorization: `Basic ${credentials}`
       }
     }
   );
@@ -311,212 +328,202 @@ async function getDarajaAccessToken() {
   const data = await response.json();
 
   if (!response.ok || !data.access_token) {
-    throw new Error("Daraja authentication failed.");
+    throw new Error("Unable to obtain Daraja access token.");
   }
 
   return data.access_token;
 }
 
-app.get("/api/mpesa/auth-check", checkTestSecret, async (req, res) => {
-  try {
-    await getDarajaAccessToken();
+app.get(
+  "/api/admin/daraja-check",
+  authenticateToken,
+  requireAdmin,
+  async (req, res) => {
+    try {
+      await getDarajaAccessToken();
 
-    res.json({
-      status: "OK",
-      message: "Daraja sandbox authentication successful."
-    });
-  } catch (error) {
-    console.error("Daraja error:", error.message);
-    sendError(res, 502, "Daraja authentication failed.");
+      res.json({
+        status: "OK",
+        message: "Daraja credentials are working."
+      });
+    } catch (error) {
+      res.status(400).json({
+        status: "ERROR",
+        message: error.message
+      });
+    }
   }
-});
+);
+// Required for serving the admin page and logo
+const path = require("path");
 
-// DATABASE TEST
-app.get("/api/db-check", checkTestSecret, async (req, res) => {
-  try {
-    const result = await pool.query("SELECT NOW() AS database_time");
+// ==============================
+// ADMIN LOGIN AND PROFILE
+// ==============================
 
-    res.json({
-      status: "OK",
-      message: "PostgreSQL database connection successful.",
-      database_time: result.rows[0].database_time
-    });
-  } catch (error) {
-    console.error("Database test error:", error.message);
-    sendError(res, 500, "Database connection failed.");
-  }
-});
-
-// ADMINISTRATOR LOGIN
 app.post("/api/admin/login", async (req, res) => {
-  const { phone, password } = req.body;
-
-  if (
-    typeof phone !== "string" ||
-    typeof password !== "string"
-  ) {
-    return sendError(res, 400, "Phone number and password are required.");
-  }
-
-  const configuredPhone = process.env.ADMIN_PHONE;
-  const configuredPassword = process.env.ADMIN_PASSWORD;
-
-  if (!configuredPhone || !configuredPassword || !process.env.JWT_SECRET) {
-    return sendError(res, 503, "Administrator security is not configured.");
-  }
-
   try {
-    const submittedPhone = normalizePhone(phone);
-    const expectedPhone = normalizePhone(configuredPhone);
+    const { phone, password } = req.body;
 
-    const phoneMatches = submittedPhone === expectedPhone;
-
-    const submittedPassword = Buffer.from(password);
-    const expectedPassword = Buffer.from(configuredPassword);
-
-    const passwordMatches =
-      submittedPassword.length === expectedPassword.length &&
-      crypto.timingSafeEqual(submittedPassword, expectedPassword);
-
-    if (!phoneMatches || !passwordMatches) {
-      return sendError(res, 401, "Incorrect administrator credentials.");
+    if (
+      !phone ||
+      !password ||
+      phone !== process.env.ADMIN_PHONE ||
+      password !== process.env.ADMIN_PASSWORD
+    ) {
+      return res.status(401).json({
+        status: "ERROR",
+        message: "Invalid administrator credentials."
+      });
     }
 
     const token = createToken({
-      role: "admin"
+      role: "admin",
+      phone
     });
 
     res.json({
       status: "OK",
-      message: "Administrator login successful.",
       token,
-      administrator: {
-        phone: expectedPhone,
-        role: "admin"
-      }
+      role: "admin"
     });
   } catch (error) {
-    if (error.message.includes("valid Kenyan mobile")) {
-      return sendError(res, 400, error.message);
-    }
-
-    console.error("Administrator login error:", error.message);
+    console.error("Admin login error:", error);
     sendError(res, 500, "Administrator login failed.");
   }
 });
 
-// ADMINISTRATOR PROFILE
-app.get("/api/admin/me", authenticateAdmin, (req, res) => {
-  res.json({
-    status: "OK",
-    administrator: {
-      phone: process.env.ADMIN_PHONE,
-      role: "admin"
-    }
-  });
-});
-
-// ADMIN: VIEW ALL RESELLERS
-app.get("/api/admin/resellers", authenticateAdmin, async (req, res) => {
-  try {
-    const result = await pool.query(`
-      SELECT
-        r.id,
-        r.name,
-        r.phone,
-        r.status,
-        r.created_at
-      FROM resellers r
-      ORDER BY r.created_at DESC
-    `);
-
+app.get(
+  "/api/admin/me",
+  authenticateToken,
+  requireAdmin,
+  (req, res) => {
     res.json({
       status: "OK",
-      resellers: result.rows
+      role: "admin",
+      phone: req.user.phone
     });
-  } catch (error) {
-    console.error("Reseller list error:", error.message);
-    sendError(res, 500, "Could not load reseller accounts.");
   }
-});
+);
 
-// ADMIN: APPROVE OR SUSPEND RESELLER
+// ==============================
+// ADMIN RESELLER MANAGEMENT
+// ==============================
+
+app.get(
+  "/api/admin/resellers",
+  authenticateToken,
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const result = await pool.query(
+        `SELECT id, name, phone, status, created_at
+         FROM resellers
+         ORDER BY created_at DESC`
+      );
+
+      res.json({
+        status: "OK",
+        resellers: result.rows
+      });
+    } catch (error) {
+      console.error("Load resellers error:", error);
+      sendError(res, 500, "Could not load resellers.");
+    }
+  }
+);
+
 app.patch(
   "/api/admin/resellers/:id/status",
-  authenticateAdmin,
+  authenticateToken,
+  requireAdmin,
   async (req, res) => {
-    const { status } = req.body;
-    const resellerId = req.params.id;
-
-    if (!/^\d+$/.test(resellerId)) {
-      return sendError(res, 400, "Invalid reseller ID.");
-    }
-
-    if (!["active", "suspended", "pending"].includes(status)) {
-      return sendError(res, 400, "Invalid reseller status.");
-    }
-
     try {
+      const id = req.params.id;
+      let { status } = req.body;
+
+      if (status === "approved") {
+        status = "active";
+      }
+
+      if (!["active", "pending", "suspended"].includes(status)) {
+        return sendError(res, 400, "Invalid reseller status.");
+      }
+
       const result = await pool.query(
         `UPDATE resellers
          SET status = $1
          WHERE id = $2
-         RETURNING id, name, phone, status`,
-        [status, resellerId]
+         RETURNING id, name, phone, status, created_at`,
+        [status, id]
       );
 
-      if (result.rows.length === 0) {
+      if (result.rowCount === 0) {
         return sendError(res, 404, "Reseller not found.");
       }
 
       res.json({
         status: "OK",
-        message: "Reseller status updated.",
         reseller: result.rows[0]
       });
     } catch (error) {
-      console.error("Reseller status error:", error.message);
-      sendError(res, 500, "Could not update reseller status.");
+      console.error("Update reseller error:", error);
+      sendError(res, 500, "Could not update reseller.");
     }
   }
 );
 
+// ==============================
 // RESELLER REGISTRATION
+// ==============================
+
 app.post("/api/resellers/register", async (req, res) => {
-  const { name, phone, password } = req.body;
-
-  if (
-    typeof name !== "string" ||
-    typeof phone !== "string" ||
-    typeof password !== "string" ||
-    !name.trim() ||
-    password.length < 8 ||
-    password.length > 128
-  ) {
-    return sendError(
-      res,
-      400,
-      "Enter your name, valid phone number and password of at least 8 characters."
-    );
-  }
-
-  let client;
+  const client = await pool.connect();
 
   try {
-    const normalizedPhone = normalizePhone(phone);
-    const passwordHash = await bcrypt.hash(password, 12);
+    const { name, phone, password } = req.body;
 
-    client = await pool.connect();
+    if (!name || !phone || !password) {
+      return sendError(
+        res,
+        400,
+        "Name, phone number and password are required."
+      );
+    }
+
+    if (String(password).length < 6) {
+      return sendError(
+        res,
+        400,
+        "Password must contain at least 6 characters."
+      );
+    }
+
+    const existing = await client.query(
+      "SELECT id FROM resellers WHERE phone = $1",
+      [phone]
+    );
+
+    if (existing.rowCount > 0) {
+      return sendError(
+        res,
+        409,
+        "A reseller with this phone number already exists."
+      );
+    }
+
     await client.query("BEGIN");
 
     const resellerResult = await client.query(
       `INSERT INTO resellers (name, phone, status)
        VALUES ($1, $2, 'pending')
        RETURNING id, name, phone, status`,
-      [name.trim(), normalizedPhone]
+      [String(name).trim(), String(phone).trim()]
     );
 
     const reseller = resellerResult.rows[0];
+
+    const passwordHash = await bcrypt.hash(password, 12);
 
     await client.query(
       `INSERT INTO reseller_credentials
@@ -525,57 +532,36 @@ app.post("/api/resellers/register", async (req, res) => {
       [reseller.id, passwordHash]
     );
 
-    await client.query(
-      `INSERT INTO token_wallets (reseller_id, balance)
-       VALUES ($1, 0)`,
-      [reseller.id]
-    );
-
     await client.query("COMMIT");
 
     res.status(201).json({
       status: "OK",
-      message: "Registration received. Await administrator approval.",
-      reseller
+      message: "Registration received. Await administrator approval."
     });
   } catch (error) {
-    if (client) {
-      await client.query("ROLLBACK").catch(() => {});
-    }
-
-    if (error.code === "23505") {
-      return sendError(res, 409, "This phone number is already registered.");
-    }
-
-    if (error.message.includes("valid Kenyan mobile")) {
-      return sendError(res, 400, error.message);
-    }
-
-    console.error("Registration error:", error.message);
-    sendError(res, 500, "Registration failed. Please try again.");
+    await client.query("ROLLBACK");
+    console.error("Reseller registration error:", error);
+    sendError(res, 500, "Reseller registration failed.");
   } finally {
-    if (client) client.release();
+    client.release();
   }
 });
 
+// ==============================
 // RESELLER LOGIN
+// ==============================
+
 app.post("/api/resellers/login", async (req, res) => {
-  const { phone, password } = req.body;
-
-  if (
-    typeof phone !== "string" ||
-    typeof password !== "string" ||
-    !password
-  ) {
-    return sendError(res, 400, "Phone number and password are required.");
-  }
-
-  if (!process.env.JWT_SECRET) {
-    return sendError(res, 503, "Login security is not configured.");
-  }
-
   try {
-    const normalizedPhone = normalizePhone(phone);
+    const { phone, password } = req.body;
+
+    if (!phone || !password) {
+      return sendError(
+        res,
+        400,
+        "Phone number and password are required."
+      );
+    }
 
     const result = await pool.query(
       `SELECT
@@ -587,12 +573,13 @@ app.post("/api/resellers/login", async (req, res) => {
        FROM resellers r
        JOIN reseller_credentials c
          ON c.reseller_id = r.id
-       WHERE r.phone = $1`,
-      [normalizedPhone]
+       WHERE r.phone = $1
+       LIMIT 1`,
+      [phone]
     );
 
-    if (result.rows.length === 0) {
-      return sendError(res, 401, "Incorrect phone number or password.");
+    if (result.rowCount === 0) {
+      return sendError(res, 401, "Invalid login details.");
     }
 
     const reseller = result.rows[0];
@@ -603,25 +590,25 @@ app.post("/api/resellers/login", async (req, res) => {
     );
 
     if (!passwordMatches) {
-      return sendError(res, 401, "Incorrect phone number or password.");
+      return sendError(res, 401, "Invalid login details.");
     }
 
     if (reseller.status !== "active") {
       return sendError(
         res,
         403,
-        "Your account is awaiting administrator approval or is suspended."
+        "Your reseller account is awaiting approval or is suspended."
       );
     }
 
     const token = createToken({
       role: "reseller",
-      resellerId: reseller.id
+      resellerId: reseller.id,
+      phone: reseller.phone
     });
 
     res.json({
       status: "OK",
-      message: "Login successful.",
       token,
       reseller: {
         id: reseller.id,
@@ -630,59 +617,56 @@ app.post("/api/resellers/login", async (req, res) => {
       }
     });
   } catch (error) {
-    if (error.message.includes("valid Kenyan mobile")) {
-      return sendError(res, 400, error.message);
-    }
-
-    console.error("Login error:", error.message);
-    sendError(res, 500, "Login failed. Please try again.");
+    console.error("Reseller login error:", error);
+    sendError(res, 500, "Reseller login failed.");
   }
 });
 
-// PRIVATE RESELLER PROFILE
-app.get("/api/resellers/me", authenticateReseller, async (req, res) => {
-  try {
-    const result = await pool.query(
-      `SELECT id, name, phone, status, created_at
-       FROM resellers
-       WHERE id = $1`,
-      [req.reseller.id]
-    );
+// ==============================
+// RESELLER PROFILE
+// ==============================
 
-    if (result.rows.length === 0) {
-      return sendError(res, 404, "Reseller account not found.");
+app.get(
+  "/api/resellers/me",
+  authenticateToken,
+  requireReseller,
+  async (req, res) => {
+    try {
+      const result = await pool.query(
+        `SELECT id, name, phone, status, created_at
+         FROM resellers
+         WHERE id = $1`,
+        [req.user.resellerId]
+      );
+
+      if (result.rowCount === 0) {
+        return sendError(res, 404, "Reseller account not found.");
+      }
+
+      res.json({
+        status: "OK",
+        reseller: result.rows[0]
+      });
+    } catch (error) {
+      console.error("Reseller profile error:", error);
+      sendError(res, 500, "Could not load reseller profile.");
     }
-
-    res.json({
-      status: "OK",
-      reseller: result.rows[0]
-    });
-  } catch (error) {
-    console.error("Profile error:", error.message);
-    sendError(res, 500, "Could not load reseller profile.");
   }
-});
+);
+// ==============================
+// VERIFIED PRODUCT CATALOGUE
+// ==============================
 
-// VIEW VERIFIED PRODUCT CATALOGUE
 app.get(
   "/api/catalog",
   authenticateToken,
   async (req, res) => {
     try {
-      if (
-        req.user.role !== "admin" &&
-        !req.user.resellerId
-      ) {
-        return sendError(res, 403, "Access denied.");
-      }
-
       const result = await pool.query(
-        `SELECT id, product_name, product_type,
-                bundle_code, bundle_size, validity,
-                supplier_name
+        `SELECT *
          FROM product_catalog
-         WHERE active = TRUE AND verified = TRUE
-         ORDER BY product_name`
+         WHERE active = TRUE
+         ORDER BY id ASC`
       );
 
       res.json({
@@ -690,210 +674,604 @@ app.get(
         products: result.rows
       });
     } catch (error) {
-      console.error("Catalogue error:", error.message);
+      console.error("Catalogue error:", error);
       sendError(res, 500, "Could not load product catalogue.");
     }
   }
 );
 
-// CREATE A CUSTOM SELLING OFFER
-app.post("/api/offers", authenticateToken, async (req, res) => {
-  const { catalog_product_id, name, price } = req.body;
+// ==============================
+// CREATE NEW OFFER
+// ==============================
 
-  if (
-    !/^\d+$/.test(String(catalog_product_id || "")) ||
-    typeof name !== "string" ||
-    !name.trim() ||
-    name.length > 150 ||
-    !Number.isFinite(Number(price)) ||
-    Number(price) <= 0 ||
-    Number(price) > 1000000
-  ) {
-    return sendError(res, 400, "Enter a valid product, offer name and selling price.");
-  }
-
-  const isAdmin = req.user.role === "admin";
-  const resellerId = isAdmin ? null : req.user.resellerId;
-
-  if (!isAdmin && !resellerId) {
-    return sendError(res, 403, "Access denied.");
-  }
-
-  try {
-    const productResult = await pool.query(
-      `SELECT id, product_name, product_type, bundle_code
-       FROM product_catalog
-       WHERE id = $1
-         AND active = TRUE
-         AND verified = TRUE`,
-      [catalog_product_id]
-    );
-
-    if (productResult.rows.length === 0) {
-      return sendError(
-        res,
-        400,
-        "This product is not in the verified active catalogue."
-      );
-    }
-
-    const product = productResult.rows[0];
-
-    const approvalStatus = isAdmin ? "approved" : "pending";
-    const active = isAdmin;
-
-    const result = await pool.query(
-      `INSERT INTO offers
-       (reseller_id, name, product_type, price,
-        bundle_code, catalog_product_id,
-        approval_status, active)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-       RETURNING *`,
-      [
-        resellerId,
-        name.trim(),
-        product.product_type,
-        Number(price),
-        product.bundle_code,
-        product.id,
-        approvalStatus,
-        active
-      ]
-    );
-
-    res.status(201).json({
-      status: "OK",
-      message: isAdmin
-        ? "Administrator offer created."
-        : "Offer submitted for administrator approval.",
-      offer: result.rows[0]
-    });
-  } catch (error) {
-    console.error("Offer creation error:", error.message);
-    sendError(res, 500, "Could not create offer.");
-  }
-});
-
-// VIEW OFFERS: ADMIN SEES ALL; RESELLER SEES OWN
-app.get("/api/offers", authenticateToken, async (req, res) => {
-  try {
-    let result;
-
-    if (req.user.role === "admin") {
-      result = await pool.query(
-        `SELECT * FROM offers ORDER BY created_at DESC`
-      );
-    } else if (req.user.resellerId) {
-      result = await pool
-     .query(
-        `SELECT * FROM offers
-         WHERE reseller_id = $1 OR reseller_id IS NULL
-         ORDER BY created_at DESC`,
-        [req.user.resellerId]
-      );
-    } else {
-      return sendError(res, 403, "Access denied.");
-    }
-
-    res.json({
-      status: "OK",
-      offers: result.rows
-    });
-  } catch (error) {
-    console.error("Offers list error:", error.message);
-    sendError(res, 500, "Could not load offers.");
-  }
-});
-
-// ADMIN: APPROVE OR REJECT A RESELLER OFFER
-app.patch(
-  "/api/admin/offers/:id/approval",
-  authenticateAdmin,
+app.post(
+  "/api/offers",
+  authenticateToken,
   async (req, res) => {
-    const { approval_status } = req.body;
-    const offerId = req.params.id;
-
-    if (!/^\d+$/.test(offerId)) {
-      return sendError(res, 400, "Invalid offer ID.");
-    }
-
-    if (!["approved", "rejected"].includes(approval_status)) {
-      return sendError(res, 400, "Choose approved or rejected.");
-    }
+    const client = await pool.connect();
 
     try {
-      const result = await pool.query(
+      const {
+        catalog_product_id,
+        name,
+        price
+      } = req.body;
+
+      if (!["admin", "reseller"].includes(req.user.role)) {
+        return sendError(res, 403, "Access denied.");
+      }
+
+      const amount = Number(price);
+
+      if (
+        !catalog_product_id ||
+        !name ||
+        !Number.isFinite(amount) ||
+        amount <= 0 ||
+        amount > 1000000
+      ) {
+        return sendError(
+          res,
+          400,
+          "A valid catalogue product, offer name and price are required."
+        );
+      }
+
+      await client.query("BEGIN");
+
+      const productResult = await client.query(
+        `SELECT *
+         FROM product_catalog
+         WHERE id = $1
+           AND active = TRUE
+         LIMIT 1`,
+        [catalog_product_id]
+      );
+
+      if (productResult.rowCount === 0) {
+        await client.query("ROLLBACK");
+        return sendError(
+          res,
+          400,
+          "This product is not available in the approved catalogue."
+        );
+      }
+
+      const isAdmin = req.user.role === "admin";
+
+      if (isAdmin) {
+        await lockOfferPrices(client);
+
+        const duplicate = await hasDuplicateActivePrice(
+          client,
+          amount
+        );
+
+        if (duplicate) {
+          await client.query("ROLLBACK");
+          return sendError(
+            res,
+            409,
+            "Another active approved offer already uses this payment amount."
+          );
+        }
+      }
+
+      const resellerId = isAdmin
+        ? null
+        : req.user.resellerId;
+
+      const approvalStatus = isAdmin
+        ? "approved"
+        : "pending";
+
+      const active = isAdmin;
+
+      const result = await client.query(
+        `INSERT INTO offers (
+           reseller_id,
+           name,
+           product_type,
+           price,
+           bundle_code,
+           catalog_product_id,
+           approval_status,
+           active
+         )
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+         RETURNING *`,
+        [
+          resellerId,
+          String(name).trim(),
+          productResult.rows[0].product_type,
+          amount,
+          productResult.rows[0].bundle_code || null,
+          catalog_product_id,
+          approvalStatus,
+          active
+        ]
+      );
+
+      await client.query("COMMIT");
+
+      res.status(201).json({
+        status: "OK",
+        message: isAdmin
+          ? "Offer created and approved."
+          : "Offer submitted for administrator approval.",
+        offer: result.rows[0]
+      });
+    } catch (error) {
+      try {
+        await client.query("ROLLBACK");
+      } catch (rollbackError) {
+        console.error("Offer rollback error:", rollbackError);
+      }
+
+      console.error("Create offer error:", error);
+      sendError(res, 500, "Could not create offer.");
+    } finally {
+      client.release();
+    }
+  }
+);
+
+// ==============================
+// LIST OFFERS
+// ==============================
+
+app.get(
+  "/api/offers",
+  authenticateToken,
+  async (req, res) => {
+    try {
+      let result;
+
+      if (req.user.role === "admin") {
+        result = await pool.query(
+          `SELECT *
+           FROM offers
+           ORDER BY created_at DESC`
+        );
+      } else if (req.user.role === "reseller") {
+        result = await pool.query(
+          `SELECT *
+           FROM offers
+           WHERE reseller_id = $1
+              OR reseller_id IS NULL
+           ORDER BY created_at DESC`,
+          [req.user.resellerId]
+        );
+      } else {
+        return sendError(res, 403, "Access denied.");
+      }
+
+      res.json({
+        status: "OK",
+        offers: result.rows
+      });
+    } catch (error) {
+      console.error("Load offers error:", error);
+      sendError(res, 500, "Could not load offers.");
+    }
+  }
+);
+// ==============================
+// APPROVE OR REJECT AN OFFER
+// ==============================
+
+app.patch(
+  "/api/admin/offers/:id/approval",
+  authenticateToken,
+  requireAdmin,
+  async (req, res) => {
+    const client = await pool.connect();
+
+    try {
+      const id = req.params.id;
+      const approvalStatus =
+        req.body.approval_status || req.body.status;
+
+      if (!["approved", "rejected"].includes(approvalStatus)) {
+        return sendError(
+          res,
+          400,
+          "Approval status must be approved or rejected."
+        );
+      }
+
+      await client.query("BEGIN");
+      await lockOfferPrices(client);
+
+      const existing = await client.query(
+        "SELECT * FROM offers WHERE id = $1 FOR UPDATE",
+        [id]
+      );
+
+      if (existing.rowCount === 0) {
+        await client.query("ROLLBACK");
+        return sendError(res, 404, "Offer not found.");
+      }
+
+      const offer = existing.rows[0];
+
+      if (approvalStatus === "approved") {
+        const duplicate = await hasDuplicateActivePrice(
+          client,
+          offer.price,
+          id
+        );
+
+        if (duplicate) {
+          await client.query("ROLLBACK");
+          return sendError(
+            res,
+            409,
+            "Another active approved offer already uses this payment amount."
+          );
+        }
+      }
+
+      const result = await client.query(
         `UPDATE offers
          SET approval_status = $1,
              active = $2
          WHERE id = $3
          RETURNING *`,
         [
-          approval_status,
-          approval_status === "approved",
-          offerId
+          approvalStatus,
+          approvalStatus === "approved",
+          id
         ]
       );
 
-      if (result.rows.length === 0) {
+      await client.query("COMMIT");
+
+      res.json({
+        status: "OK",
+        message: `Offer ${approvalStatus}.`,
+        offer: result.rows[0]
+      });
+    } catch (error) {
+      try {
+        await client.query("ROLLBACK");
+      } catch (rollbackError) {
+        console.error("Approval rollback error:", rollbackError);
+      }
+
+      console.error("Offer approval error:", error);
+      sendError(res, 500, "Could not update offer approval.");
+    } finally {
+      client.release();
+    }
+  }
+);
+
+// ==============================
+// EDIT AN OFFER
+// ==============================
+
+app.patch(
+  "/api/admin/offers/:id",
+  authenticateToken,
+  requireAdmin,
+  async (req, res) => {
+    const client = await pool.connect();
+
+    try {
+      const id = req.params.id;
+      const { name, price } = req.body;
+
+      if (
+        name === undefined &&
+        price === undefined
+      ) {
+        return sendError(
+          res,
+          400,
+          "Provide an offer name or price to update."
+        );
+      }
+
+      if (
+        name !== undefined &&
+        (typeof name !== "string" || !name.trim())
+      ) {
+        return sendError(res, 400, "Offer name is invalid.");
+      }
+
+      let amount;
+
+      if (price !== undefined) {
+        amount = Number(price);
+
+        if (
+          !Number.isFinite(amount) ||
+          amount <= 0 ||
+          amount > 1000000
+        ) {
+          return sendError(res, 400, "Offer price is invalid.");
+        }
+      }
+
+      await client.query("BEGIN");
+      await lockOfferPrices(client);
+
+      const existing = await client.query(
+        "SELECT * FROM offers WHERE id = $1 FOR UPDATE",
+        [id]
+      );
+
+      if (existing.rowCount === 0) {
+        await client.query("ROLLBACK");
+        return sendError(res, 404, "Offer not found.");
+      }
+
+      const offer = existing.rows[0];
+      const newPrice =
+        amount === undefined ? offer.price : amount;
+
+      if (
+        offer.active === true &&
+        offer.approval_status === "approved"
+      ) {
+        const duplicate = await hasDuplicateActivePrice(
+          client,
+          newPrice,
+          id
+        );
+
+        if (duplicate) {
+          await client.query("ROLLBACK");
+          return sendError(
+            res,
+            409,
+            "Another active approved offer already uses this payment amount."
+          );
+        }
+      }
+
+      const result = await client.query(
+        `UPDATE offers
+         SET name = $1,
+             price = $2
+         WHERE id = $3
+         RETURNING *`,
+        [
+          name === undefined ? offer.name : name.trim(),
+          newPrice,
+          id
+        ]
+      );
+
+      await client.query("COMMIT");
+
+      res.json({
+        status: "OK",
+        message: "Offer updated successfully.",
+        offer: result.rows[0]
+      });
+    } catch (error) {
+      try {
+        await client.query("ROLLBACK");
+      } catch (rollbackError) {
+        console.error("Edit rollback error:", rollbackError);
+      }
+
+      console.error("Edit offer error:", error);
+      sendError(res, 500, "Could not edit offer.");
+    } finally {
+      client.release();
+    }
+  }
+);
+// ==============================
+// ACTIVATE OR DEACTIVATE OFFER
+// ==============================
+
+app.patch(
+  "/api/admin/offers/:id/active",
+  authenticateToken,
+  requireAdmin,
+  async (req, res) => {
+    const client = await pool.connect();
+
+    try {
+      const id = req.params.id;
+      const active = req.body.active;
+
+      if (typeof active !== "boolean") {
+        return sendError(
+          res,
+          400,
+          "Active must be true or false."
+        );
+      }
+
+      await client.query("BEGIN");
+      await lockOfferPrices(client);
+
+      const existing = await client.query(
+        "SELECT * FROM offers WHERE id = $1 FOR UPDATE",
+        [id]
+      );
+
+      if (existing.rowCount === 0) {
+        await client.query("ROLLBACK");
+        return sendError(res, 404, "Offer not found.");
+      }
+
+      const offer = existing.rows[0];
+
+      if (
+        active &&
+        offer.approval_status !== "approved"
+      ) {
+        await client.query("ROLLBACK");
+        return sendError(
+          res,
+          400,
+          "Only approved offers can be activated."
+        );
+      }
+
+      if (active) {
+        const duplicate = await hasDuplicateActivePrice(
+          client,
+          offer.price,
+          id
+        );
+
+        if (duplicate) {
+          await client.query("ROLLBACK");
+          return sendError(
+            res,
+            409,
+            "Another active approved offer already uses this payment amount."
+          );
+        }
+      }
+
+      const result = await client.query(
+        `UPDATE offers
+         SET active = $1
+         WHERE id = $2
+         RETURNING *`,
+        [active, id]
+      );
+
+      await client.query("COMMIT");
+
+      res.json({
+        status: "OK",
+        message: active
+          ? "Offer activated."
+          : "Offer deactivated.",
+        offer: result.rows[0]
+      });
+    } catch (error) {
+      try {
+        await client.query("ROLLBACK");
+      } catch (rollbackError) {
+        console.error("Toggle rollback error:", rollbackError);
+      }
+
+      console.error("Toggle offer error:", error);
+      sendError(res, 500, "Could not change offer status.");
+    } finally {
+      client.release();
+    }
+  }
+);
+
+// ==============================
+// DELETE OFFER
+// ==============================
+
+app.delete(
+  "/api/admin/offers/:id",
+  authenticateToken,
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const id = req.params.id;
+
+      const result = await pool.query(
+        `DELETE FROM offers
+         WHERE id = $1
+         RETURNING *`,
+        [id]
+      );
+
+      if (result.rowCount === 0) {
         return sendError(res, 404, "Offer not found.");
       }
 
       res.json({
         status: "OK",
-        message: "Offer review completed.",
+        message: "Offer deleted successfully.",
         offer: result.rows[0]
       });
     } catch (error) {
-      console.error("Offer approval error:", error.message);
-      sendError(res, 500, "Could not update offer.");
+      if (error.code === "23503") {
+        return sendError(
+          res,
+          409,
+          "This offer is linked to existing orders and cannot be deleted. Deactivate it instead."
+        );
+      }
+
+      console.error("Delete offer error:", error);
+      sendError(res, 500, "Could not delete offer.");
     }
   }
 );
+// ==============================
+// SAFARICOM C2B VALIDATION
+// ==============================
 
-// SAFARICOM C2B VALIDATION CALLBACK
-app.post("/api/mpesa/c2b/validation", (req, res) => {
-  console.log("C2B validation callback received.");
-
-  res.json({
-    ResultCode: 0,
-    ResultDesc: "Accepted"
-  });
-});
-
-// SAFARICOM C2B CONFIRMATION CALLBACK
-app.post("/api/mpesa/c2b/confirmation", async (req, res) => {
+app.post("/api/mpesa/validation", async (req, res) => {
   try {
     console.log(
-      "C2B confirmation callback received:",
+      "M-Pesa validation callback received:",
       JSON.stringify(req.body)
     );
+
+    res.json({
+      ResultCode: 0,
+      ResultDesc: "Accepted"
+    });
+  } catch (error) {
+    console.error("M-Pesa validation error:", error);
+
+    res.status(500).json({
+      ResultCode: 1,
+      ResultDesc: "Validation processing failed"
+    });
+  }
+});
+
+// ==============================
+// SAFARICOM C2B CONFIRMATION
+// ==============================
+
+app.post("/api/mpesa/confirmation", async (req, res) => {
+  try {
+    console.log(
+      "M-Pesa confirmation callback received:",
+      JSON.stringify(req.body)
+    );
+
+    // Payment matching, idempotency checks and authorized
+    // bundle fulfilment are not implemented in this callback yet.
 
     res.json({
       ResultCode: 0,
       ResultDesc: "Confirmation received"
     });
   } catch (error) {
-    console.error("C2B callback error:", error.message);
+    console.error("M-Pesa confirmation error:", error);
 
-    res.json({
-      ResultCode: 0,
-      ResultDesc: "Received"
+    res.status(500).json({
+      ResultCode: 1,
+      ResultDesc: "Confirmation processing failed"
     });
   }
 });
 
-// START SERVER AFTER DATABASE INITIALIZATION
+// ==============================
+// START SERVER
+// ==============================
+
 const PORT = process.env.PORT || 3000;
 
 initializeDatabase()
   .then(() => {
-    app.listen(PORT, () => {
-      console.log(`M-Pesa Auto Bundles backend running on port ${PORT}`);
+    app.listen(PORT, "0.0.0.0", () => {
+      console.log(`M-Pesa Auto Bundles running on port ${PORT}`);
     });
   })
   .catch((error) => {
-    console.error("Server startup failed:", error.message);
+    console.error("Server startup failed:", error);
     process.exit(1);
   });
-        
