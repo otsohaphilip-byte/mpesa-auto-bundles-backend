@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -7,7 +6,9 @@
 <title>M-Pesa Auto Bundles | Admin</title>
 
 <style>
-* { box-sizing: border-box; }
+* {
+  box-sizing: border-box;
+}
 
 body {
   margin: 0;
@@ -17,21 +18,30 @@ body {
 }
 
 header {
-  background: #087b48;
+  background: #087a45;
   color: white;
-  padding: 22px 16px;
+  padding: 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 
 header img {
-  width: 75px;
-  height: 75px;
+  width: 42px;
+  height: 42px;
   object-fit: contain;
 }
 
-main {
-  max-width: 850px;
-  margin: 22px auto;
-  padding: 12px;
+header h2 {
+  margin: 0;
+  font-size: 19px;
+}
+
+.container {
+  width: 100%;
+  max-width: 1100px;
+  margin: auto;
+  padding: 16px;
 }
 
 .card {
@@ -39,88 +49,137 @@ main {
   padding: 18px;
   margin-bottom: 16px;
   border-radius: 12px;
-  box-shadow: 0 2px 9px #00000010;
+  box-shadow: 0 2px 8px #0000000d;
 }
 
-input, button, select {
-  width: 100%;
-  padding: 13px;
-  margin: 7px 0;
-  border-radius: 7px;
-  font-size: 15px;
+h3 {
+  margin-top: 0;
 }
 
 input, select {
-  border: 1px solid #ccd3dd;
+  width: 100%;
+  padding: 12px;
+  margin: 7px 0 12px;
+  border: 1px solid #ccd3dc;
+  border-radius: 7px;
+  font-size: 15px;
+  background: white;
 }
 
 button {
   border: 0;
-  background: #087b48;
+  border-radius: 7px;
+  padding: 11px 15px;
+  background: #087a45;
   color: white;
-  font-weight: bold;
+  font-size: 14px;
   cursor: pointer;
+  margin: 3px;
 }
 
-button.secondary { background: #34445b; }
-button.danger { background: #b83232; }
-button:disabled { opacity: 0.5; }
+button.secondary {
+  background: #475569;
+}
 
-.hidden { display: none; }
+button.danger {
+  background: #dc2626;
+}
+
+button.warning {
+  background: #d97706;
+}
+
+button:disabled {
+  opacity: .5;
+  cursor: not-allowed;
+}
+
+.hidden {
+  display: none !important;
+}
+
+.message {
+  padding: 11px;
+  margin: 10px 0;
+  border-radius: 7px;
+  display: none;
+}
+
+.success {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.error {
+  background: #fee2e2;
+  color: #991b1b;
+}
 
 .item {
-  border: 1px solid #e1e6ed;
-  border-radius: 8px;
+  border: 1px solid #e2e8f0;
   padding: 13px;
   margin: 10px 0;
-  overflow-wrap: anywhere;
+  border-radius: 9px;
+  background: #fff;
 }
 
-.item p { margin: 7px 0; }
+.item strong {
+  display: block;
+  margin-bottom: 6px;
+}
+
+.item small {
+  color: #64748b;
+  line-height: 1.6;
+}
 
 .actions {
+  margin-top: 10px;
   display: flex;
-  gap: 8px;
   flex-wrap: wrap;
-}
-
-.actions button {
-  flex: 1;
-  min-width: 110px;
+  gap: 5px;
 }
 
 .status {
-  color: #087b48;
-  font-weight: bold;
-}
-
-#message {
-  padding: 10px;
-  overflow-wrap: anywhere;
-}
-
-footer {
-  text-align: center;
-  padding: 20px;
-  color: #667085;
+  display: inline-block;
+  padding: 4px 8px;
+  border-radius: 20px;
   font-size: 12px;
+  background: #e2e8f0;
+  margin: 4px 3px 4px 0;
 }
 
-.login-row {
+.status.active {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.status.pending {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.status.rejected {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.top-actions {
   display: flex;
-  gap: 6px;
+  justify-content: space-between;
   align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
-.login-row input {
-  flex: 1;
-  min-width: 0;
-}
+@media (max-width: 600px) {
+  .container {
+    padding: 10px;
+  }
 
-.login-row button {
-  width: 55px;
-  flex-shrink: 0;
-  font-size: 19px;
+  .card {
+    padding: 14px;
+  }
 }
 </style>
 </head>
@@ -128,115 +187,116 @@ footer {
 <body>
 
 <header>
-  <img src="/logo.png" alt="M-Pesa Auto Bundles">
-  <h2>M-Pesa Auto Bundles</h2>
-  <p>Administrator Control Dashboard</p>
+  <img src="/logo.png" alt="Logo"
+       onerror="this.style.display='none'">
+  <h2>M-Pesa Auto Bundles Admin</h2>
 </header>
 
-<main>
+<div class="container">
 
-<section id="loginSection" class="card">
-  <h3>Administrator Login</h3>
-  <p>Sign in using your administrator account.</p>
+  <div id="loginPanel" class="card">
+    <h3>Admin Login</h3>
+    <div id="loginMessage" class="message"></div>
 
-  <label>Administrator Phone Number</label>
-  <div class="login-row">
-    <input
-      id="phone"
-      type="password"
-      inputmode="tel"
-      placeholder="Administrator phone number"
-      value="0794609364"
-    >
-    <button type="button" onclick="togglePhone()">👁</button>
+    <label>Admin phone number</label>
+    <input id="phone" type="tel"
+           placeholder="Enter admin phone number">
+
+    <label>Password</label>
+    <input id="password" type="password"
+           placeholder="Enter admin password">
+
+    <button onclick="login()">Login</button>
   </div>
 
-  <label>Administrator Password</label>
-  <div class="login-row">
-    <input
-      id="password"
-      type="password"
-      placeholder="Administrator password"
-    >
-    <button type="button" onclick="togglePassword()">👁</button>
-  </div>
+  <main id="dashboard" class="hidden">
+        <div class="card">
+      <div class="top-actions">
+        <h3>Admin Dashboard</h3>
+        <button class="danger" onclick="logout()">Logout</button>
+      </div>
+      <div id="mainMessage" class="message"></div>
+      <p>Manage resellers, review offers and control your bundle catalogue.</p>
+    </div>
 
-  <button id="loginButton" onclick="login()">Sign In</button>
-</section>
+    <div class="card">
+      <div class="top-actions">
+        <h3>Offer Management</h3>
+        <button onclick="showAddOfferForm()">+ Add Offer</button>
+      </div>
 
-<section id="dashboard" class="hidden">
+      <label>Filter offers by category</label>
+      <select id="categoryFilter" onchange="renderOffers()">
+        <option value="all">All categories</option>
+        <option value="data">Data</option>
+        <option value="sms">SMS</option>
+        <option value="minutes">Minutes</option>
+        <option value="other">Other</option>
+      </select>
 
-  <div class="card">
-    <h3>Welcome, Administrator</h3>
-    <p class="status">Administrator access</p>
+      <div id="offersList">Loading offers...</div>
+    </div>
 
-    <button class="secondary" onclick="loadAll()">
-      Refresh Dashboard
-    </button>
+    <div id="addOfferPanel" class="card hidden">
+      <h3>Add New Offer</h3>
+      <div id="offerMessage" class="message"></div>
 
-    <button class="danger" onclick="logout()">
-      Log Out
-    </button>
-  </div>
+      <label>Offer name</label>
+      <input id="offerName" placeholder="Example: 1GB Daily">
 
-  <div class="card">
-    <h3>Reseller Management</h3>
-    <div id="resellerList">Loading resellers...</div>
-  </div>
+      <label>Verified catalogue product</label>
+      <select id="catalogProduct">
+        <option value="">Loading catalogue...</option>
+      </select>
 
-  <div class="card">
-    <h3>Offer Management</h3>
-    <button onclick="showAddOfferForm()">+ Add Offer</button>
-    <div id="offerList">Loading offers...</div>
-  </div>
+      <label>Your selling price (KSh)</label>
+      <input id="offerPrice" type="number"
+             min="1" step="0.01" placeholder="Enter selling price">
 
-</section>
+      <div class="actions">
+        <button onclick="submitNewOffer()">Save Offer</button>
+        <button class="secondary"
+                onclick="hideAddOfferForm()">Cancel</button>
+      </div>
+    </div>
 
-<div id="message" role="status"></div>
+    <div class="card">
+      <h3>Reseller Management</h3>
+      <div id="resellersList">Loading resellers...</div>
+    </div>
 
-</main>
-
-<footer>
-  M-Pesa Auto Bundles Administration
-</footer>
+  </main>
+</div>
 
 <script>
 const API = "https://mpesa-auto-bundles-backend.onrender.com";
-let adminToken = sessionStorage.getItem("adminToken");
+let token = sessionStorage.getItem("adminToken") || "";
+let allOffers = [];
+let catalogue = [];
 
-function showMessage(message, error = false) {
-  const box = document.getElementById("message");
+function showMessage(id, message, isError = false) {
+  const box = document.getElementById(id);
   box.textContent = message;
-  box.style.color = error ? "#b83232" : "#087b48";
-}
-
-function togglePhone() {
-  const phone = document.getElementById("phone");
-  phone.type = phone.type === "password" ? "tel" : "password";
-}
-
-function togglePassword() {
-  const password = document.getElementById("password");
-  password.type =
-    password.type === "password" ? "text" : "password";
+  box.className = "message " + (isError ? "error" : "success");
+  box.style.display = "block";
 }
 
 async function request(path, options = {}) {
+  const headers = {
+    "Content-Type": "application/json",
+    ...(token ? { Authorization: "Bearer " + token } : {}),
+    ...(options.headers || {})
+  };
+
   const response = await fetch(API + path, {
     ...options,
-    headers: {
-      "Content-Type": "application/json",
-      ...(adminToken
-        ? { Authorization: "Bearer " + adminToken }
-        : {}),
-      ...(options.headers || {})
-    }
+    headers
   });
 
   const data = await response.json().catch(() => ({}));
 
   if (!response.ok) {
-    throw new Error(data.message || "Request failed.");
+    throw new Error(data.message || data.error || "Request failed");
   }
 
   return data;
@@ -247,13 +307,9 @@ async function login() {
   const password = document.getElementById("password").value;
 
   if (!phone || !password) {
-    showMessage("Enter your phone number and password.", true);
+    showMessage("loginMessage", "Enter your phone number and password.", true);
     return;
   }
-
-  const button = document.getElementById("loginButton");
-  button.disabled = true;
-  button.textContent = "Signing in...";
 
   try {
     const data = await request("/api/admin/login", {
@@ -261,107 +317,339 @@ async function login() {
       body: JSON.stringify({ phone, password })
     });
 
-    if (!data.token) {
-      throw new Error("Login did not return an access token.");
-    }
+    token = data.token || data.accessToken || "";
+    if (!token) throw new Error("Login response did not contain a token.");
 
-    adminToken = data.token;
-    sessionStorage.setItem("adminToken", adminToken);
-
-    document.getElementById("password").value = "";
-    document.getElementById("loginSection").classList.add("hidden");
-    document.getElementById("dashboard").classList.remove("hidden");
-
-    showMessage("Administrator login successful.");
-    await loadAll();
-
+    sessionStorage.setItem("adminToken", token);
+    await openDashboard();
   } catch (error) {
-    showMessage(error.message, true);
-  } finally {
-    button.disabled = false;
-    button.textContent = "Sign In";
+    showMessage("loginMessage", error.message, true);
   }
 }
 
-function logout() {
-  sessionStorage.removeItem("adminToken");
-  adminToken = null;
-
-  document.getElementById("dashboard").classList.add("hidden");
-  document.getElementById("loginSection").classList.remove("hidden");
-
-  showMessage("You have logged out.");
+async function openDashboard() {
+  await request("/api/admin/me");
+  document.getElementById("loginPanel").classList.add("hidden");
+  document.getElementById("dashboard").classList.remove("hidden");
+  await loadAll();
 }
-  
+
+function logout() {
+  token = "";
+  sessionStorage.removeItem("adminToken");
+  document.getElementById("dashboard").classList.add("hidden");
+  document.getElementById("loginPanel").classList.remove("hidden");
+}
+
 async function loadAll() {
-  await Promise.all([
-    loadResellers(),
-    loadOffers()
+  await Promise.allSettled([
+    loadOffers(),
+    loadResellers()
   ]);
 }
 
+function categoryOf(type) {
+  const value = String(type || "").toLowerCase();
+
+  if (value.includes("sms") || value.includes("text")) return "sms";
+  if (value.includes("minute") || value.includes("voice") ||
+      value.includes("call")) return "minutes";
+  if (value.includes("data") || value.includes("internet") ||
+      value.includes("bundle")) return "data";
+
+  return "other";
+}
+
+function safe(value) {
+  return String(value ?? "").replace(/[&<>"']/g, char => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;"
+  })[char]);
+}
+  async function loadOffers() {
+  const box = document.getElementById("offersList");
+  box.textContent = "Loading offers...";
+
+  try {
+    const data = await request("/api/offers");
+    allOffers = Array.isArray(data) ? data :
+      (data.offers || data.data || []);
+
+    renderOffers();
+  } catch (error) {
+    box.textContent = "Could not load offers: " + error.message;
+  }
+}
+
+function renderOffers() {
+  const box = document.getElementById("offersList");
+  const filter = document.getElementById("categoryFilter").value;
+
+  const offers = allOffers.filter(offer =>
+    filter === "all" || categoryOf(offer.product_type) === filter
+  );
+
+  box.innerHTML = "";
+
+  if (!offers.length) {
+    box.textContent = "No offers found in this category.";
+    return;
+  }
+
+  offers.forEach(offer => {
+    const item = document.createElement("div");
+    item.className = "item";
+
+    const approved = offer.approval_status === "approved";
+    const active = offer.active === true;
+
+    const status = approved
+      ? '<span class="status active">Approved</span>'
+      : '<span class="status pending">' +
+        safe(offer.approval_status || "Pending") + '</span>';
+
+    const activeStatus = active
+      ? '<span class="status active">Active</span>'
+      : '<span class="status">Inactive</span>';
+
+    item.innerHTML = `
+      <strong>${safe(offer.name || offer.offer_name || "Bundle offer")}</strong>
+      <small>
+        Price: KSh ${safe(offer.price)}<br>
+        Product type: ${safe(offer.product_type || "Not specified")}<br>
+        Product code: ${safe(offer.bundle_code || "Not specified")}<br>
+        Offer ID: ${safe(offer.id)}
+      </small>
+      <div>${status} ${activeStatus}</div>
+      <div class="actions">
+        ${!approved ? `
+          <button onclick="reviewOffer(${Number(offer.id)}, 'approved')">
+            Approve
+          </button>
+          <button class="danger"
+            onclick="reviewOffer(${Number(offer.id)}, 'rejected')">
+            Reject
+          </button>` : ""}
+        <button class="secondary"
+          onclick="editOffer(${Number(offer.id)})">Edit</button>
+        ${approved ? `
+          <button class="warning"
+            onclick="toggleOffer(${Number(offer.id)}, ${!active})">
+            ${active ? "Deactivate" : "Activate"}
+          </button>` : ""}
+        <button class="danger"
+          onclick="deleteOffer(${Number(offer.id)})">Delete</button>
+      </div>
+    `;
+
+    box.appendChild(item);
+  });
+}
+
+async function reviewOffer(id, status) {
+  if (!confirm("Are you sure you want to " + status + " this offer?")) return;
+
+  try {
+    await request("/api/admin/offers/" + id + "/approval", {
+      method: "PATCH",
+      body: JSON.stringify({ status })
+    });
+
+    alert("Offer review submitted.");
+    await loadOffers();
+  } catch (error) {
+    alert("Could not review offer: " + error.message);
+  }
+}
+
+async function editOffer(id) {
+  const offer = allOffers.find(item => Number(item.id) === id);
+  if (!offer) return;
+
+  const name = prompt("Enter the new offer name:", offer.name || "");
+  if (name === null) return;
+
+  const price = prompt("Enter the new selling price:", offer.price);
+  if (price === null) return;
+
+  if (!name.trim() || !Number.isFinite(Number(price)) ||
+      Number(price) <= 0) {
+    alert("Enter a valid offer name and price.");
+    return;
+  }
+
+  try {
+    await request("/api/admin/offers/" + id, {
+      method: "PATCH",
+      body: JSON.stringify({
+        name: name.trim(),
+        price: Number(price)
+      })
+    });
+
+    alert("Offer updated.");
+    await loadOffers();
+  } catch (error) {
+    alert("Could not update offer: " + error.message);
+  }
+}
+
+async function toggleOffer(id, active) {
+  const action = active ? "activate" : "deactivate";
+  if (!confirm("Do you want to " + action + " this offer?")) return;
+
+  try {
+    await request("/api/admin/offers/" + id + "/active", {
+      method: "PATCH",
+      body: JSON.stringify({ active })
+    });
+
+    alert("Offer status updated.");
+    await loadOffers();
+  } catch (error) {
+    alert("Could not change offer status: " + error.message);
+  }
+}
+
+async function deleteOffer(id) {
+  if (!confirm("Delete this offer? This cannot be undone.")) return;
+
+  try {
+    await request("/api/admin/offers/" + id, {
+      method: "DELETE"
+    });
+
+    alert("Offer deleted.");
+    await loadOffers();
+  } catch (error) {
+    alert("Could not delete offer: " + error.message);
+  }
+}
+
+async function loadCatalogue() {
+  const select = document.getElementById("catalogProduct");
+  select.innerHTML = '<option value="">Loading products...</option>';
+
+  try {
+    const data = await request("/api/catalog");
+    catalogue = data.products || [];
+
+    select.innerHTML = '<option value="">Choose a verified product</option>';
+
+    catalogue.forEach(product => {
+      const option = document.createElement("option");
+      option.value = product.id;
+      option.textContent =
+        product.product_name + " — " +
+        (product.product_type || "Product") + " — " +
+        (product.bundle_code || "No code");
+
+      select.appendChild(option);
+    });
+
+    if (!catalogue.length) {
+      select.innerHTML =
+        '<option value="">No verified products available</option>';
+    }
+  } catch (error) {
+    select.innerHTML =
+      '<option value="">Could not load catalogue</option>';
+    showMessage("offerMessage", error.message, true);
+  }
+}
+
+function showAddOfferForm() {
+  document.getElementById("addOfferPanel").classList.remove("hidden");
+  document.getElementById("offerMessage").style.display = "none";
+  loadCatalogue();
+}
+
+function hideAddOfferForm() {
+  document.getElementById("addOfferPanel").classList.add("hidden");
+}
+
+async function submitNewOffer() {
+  const name = document.getElementById("offerName").value.trim();
+  const productId = document.getElementById("catalogProduct").value;
+  const price = Number(document.getElementById("offerPrice").value);
+
+  if (!name || !productId || !Number.isFinite(price) || price <= 0) {
+    showMessage("offerMessage",
+      "Enter an offer name, choose a product and enter a valid price.", true);
+    return;
+  }
+
+  try {
+    await request("/api/offers", {
+      method: "POST",
+      body: JSON.stringify({
+        name,
+        price,
+        catalog_product_id: Number(productId)
+      })
+    });
+
+    showMessage("offerMessage", "Offer created successfully.");
+    document.getElementById("offerName").value = "";
+    document.getElementById("offerPrice").value = "";
+    document.getElementById("catalogProduct").value = "";
+
+    await loadOffers();
+  } catch (error) {
+    showMessage("offerMessage", error.message, true);
+  }
+}
+
 async function loadResellers() {
-  const box = document.getElementById("resellerList");
+  const box = document.getElementById("resellersList");
   box.textContent = "Loading resellers...";
 
   try {
     const data = await request("/api/admin/resellers");
-
-    if (!data.resellers || !data.resellers.length) {
-      box.textContent = "No registered resellers yet.";
-      return;
-    }
+    const resellers = Array.isArray(data) ? data :
+      (data.resellers || data.data || []);
 
     box.innerHTML = "";
 
-    data.resellers.forEach(reseller => {
+    if (!resellers.length) {
+      box.textContent = "No resellers registered yet.";
+      return;
+    }
+
+    resellers.forEach(reseller => {
       const item = document.createElement("div");
       item.className = "item";
 
-      const title = document.createElement("strong");
-      title.textContent = reseller.name;
+      item.innerHTML = `
+        <strong>${safe(reseller.name || "Reseller")}</strong>
+        <small>
+          Phone: ${safe(reseller.phone || "Not provided")}<br>
+          ID: ${safe(reseller.id)}<br>
+          Status: ${safe(reseller.status || "Unknown")}
+        </small>
+        <div class="actions">
+          <button onclick="updateReseller(${Number(reseller.id)}, 'approved')">
+            Approve
+          </button>
+          <button class="warning"
+            onclick="updateReseller(${Number(reseller.id)}, 'suspended')">
+            Suspend
+          </button>
+        </div>
+      `;
 
-      const phone = document.createElement("p");
-      phone.textContent = "Phone: " + reseller.phone;
-
-      const status = document.createElement("p");
-      status.textContent = "Status: " + reseller.status;
-
-      item.append(title, phone, status);
-
-      const actions = document.createElement("div");
-      actions.className = "actions";
-
-      if (reseller.status !== "active") {
-        const approve = document.createElement("button");
-        approve.textContent = "Approve";
-        approve.onclick = () =>
-          updateReseller(reseller.id, "active");
-        actions.appendChild(approve);
-      }
-
-      if (reseller.status !== "suspended") {
-        const suspend = document.createElement("button");
-        suspend.textContent = "Suspend";
-        suspend.className = "danger";
-        suspend.onclick = () =>
-          updateReseller(reseller.id, "suspended");
-        actions.appendChild(suspend);
-      }
-
-      item.appendChild(actions);
       box.appendChild(item);
     });
-
   } catch (error) {
-    box.textContent = error.message;
+    box.textContent = "Could not load resellers: " + error.message;
   }
 }
 
 async function updateReseller(id, status) {
-  if (!confirm("Change this reseller's status to " + status + "?")) {
-    return;
-  }
+  if (!confirm("Change reseller status to " + status + "?")) return;
 
   try {
     await request("/api/admin/resellers/" + id + "/status", {
@@ -369,158 +657,24 @@ async function updateReseller(id, status) {
       body: JSON.stringify({ status })
     });
 
-    showMessage("Reseller status updated.");
+    alert("Reseller status updated.");
     await loadResellers();
-
   } catch (error) {
-    showMessage(error.message, true);
+    alert("Could not update reseller: " + error.message);
   }
 }
 
-async function loadOffers() {
-  const box = document.getElementById("offerList");
-  box.textContent = "Loading offers...";
+(async function restoreLogin() {
+  if (!token) return;
 
   try {
-    const data = await request("/api/offers");
-
-    if (!data.offers || !data.offers.length) {
-      box.textContent = "No offers have been created yet.";
-      return;
-    }
-
-    box.innerHTML = "";
-
-    data.offers.forEach(offer => {
-      const item = document.createElement("div");
-      item.className = "item";
-
-      const title = document.createElement("strong");
-      title.textContent = offer.name;
-
-      const price = document.createElement("p");
-      price.textContent = "Bingwa Price: KSh " + offer.price;
-
-      const product = document.createElement("p");
-      product.textContent = "Product: " + offer.bundle_code;
-
-      const status = document.createElement("p");
-      status.textContent = "Approval: " + offer.approval_status;
-
-      item.append(title, price, product, status);
-
-      if (
-        offer.approval_status === "pending" &&
-        offer.reseller_id !== null
-      ) {
-        const actions = document.createElement("div");
-        actions.className = "actions";
-
-        const approve = document.createElement("button");
-        approve.textContent = "Approve";
-        approve.onclick = () =>
-          reviewOffer(offer.id, "approved");
-
-        const reject = document.createElement("button");
-        reject.textContent = "Reject";
-        reject.className = "danger";
-        reject.onclick = () =>
-          reviewOffer(offer.id, "rejected");
-
-        actions.append(approve, reject);
-        item.appendChild(actions);
-      }
-
-      box.appendChild(item);
-    });
-
+    await openDashboard();
   } catch (error) {
-    box.textContent = error.message;
+    token = "";
+    sessionStorage.removeItem("adminToken");
   }
-}
-
-async function reviewOffer(id, approval_status) {
-  if (!confirm("Are you sure you want to " + approval_status + " this offer?")) {
-    return;
-  }
-
-  try {
-    await request("/api/admin/offers/" + id + "/approval", {
-      method: "PATCH",
-      body: JSON.stringify({ approval_status })
-    });
-
-    showMessage("Offer review completed.");
-    await loadOffers();
-
-  } catch (error) {
-    showMessage(error.message, true);
-  }
-}
-
-function showAddOfferForm() {
-  document.getElementById("offerList").innerHTML = `
-    <h3>Create New Bundle Offer</h3>
-
-    <label>Offer Name</label>
-    <input id="offerName" placeholder="e.g. 1GB Daily">
-
-    <label>Verified Catalogue Product ID</label>
-    <input id="productId" placeholder="Catalogue product ID">
-
-    <label>Your Bingwa Selling Price (KSh)</label>
-    <input id="offerPrice" type="number" min="1"
-      placeholder="Enter selling price">
-
-    <button onclick="submitNewOffer()">Save Offer</button>
-    <button class="secondary" onclick="loadOffers()">Cancel</button>
-  `;
-}
-
-async function submitNewOffer() {
-  try {
-    const name =
-      document.getElementById("offerName").value.trim();
-
-    const catalog_product_id =
-      document.getElementById("productId").value.trim();
-
-    const price =
-      Number(document.getElementById("offerPrice").value);
-
-    if (
-      !name ||
-      !catalog_product_id ||
-      !Number.isFinite(price) ||
-      price <= 0
-    ) {
-      throw new Error("Enter a valid offer name, product ID and price.");
-    }
-
-    await request("/api/offers", {
-      method: "POST",
-      body: JSON.stringify({
-        name,
-        catalog_product_id,
-        price
-      })
-    });
-
-    showMessage("Offer submitted for verification.");
-    await loadOffers();
-
-  } catch (error) {
-    showMessage(error.message, true);
-  }
-}
-
-if (adminToken) {
-  document.getElementById("loginSection").classList.add("hidden");
-  document.getElementById("dashboard").classList.remove("hidden");
-  loadAll().catch(() => logout());
-}
-
+})();
 </script>
+
 </body>
 </html>
-  
