@@ -1255,20 +1255,70 @@ app.post("/api/mpesa/validation", async (req, res) => {
 // SAFARICOM C2B CONFIRMATION
 // ==============================
 
+
 app.post("/api/mpesa/confirmation", async (req, res) => {
   try {
+    const body = req.body || {};
+
     console.log(
       "M-Pesa confirmation callback received:",
-      JSON.stringify(req.body)
+      JSON.stringify(body)
     );
 
-    // Payment matching, idempotency checks and authorized
-    // bundle fulfilment are not implemented in this callback yet.
+    const transId = body.TransID
+      ? String(body.TransID).trim()
+      : null;
+
+    const amountValue = body.TransAmount;
+    const amountNumber = Number(amountValue);
+
+    const transAmount =
+      amountValue !== undefined &&
+      amountValue !== null &&
+      amountValue !== "" &&
+      Number.isFinite(amountNumber)
+        ? amountNumber
+        : null;
+
+    await pool.query(
+      `INSERT INTO mpesa_callback_events (
+        trans_id,
+        business_short_code,
+        bill_ref_number,
+        trans_amount,
+        msisdn,
+        first_name,
+        middle_name,
+        last_name,
+        trans_time,
+        raw_payload,
+        processing_note
+      )
+      VALUES (
+        $1, $2, $3, $4, $5, $6,
+        $7, $8, $9, $10::jsonb, $11
+      )
+      ON CONFLICT (trans_id) DO NOTHING`,
+      [
+        transId,
+        body.BusinessShortCode || null,
+        body.BillRefNumber || null,
+        transAmount,
+        body.MSISDN || null,
+        body.FirstName || null,
+        body.MiddleName || null,
+        body.LastName || null,
+        body.TransTime || null,
+        JSON.stringify(body),
+        transId ? null : "Missing M-Pesa transaction receipt number."
+      ]
+    );
 
     res.json({
       ResultCode: 0,
       ResultDesc: "Confirmation received"
     });
+
   } catch (error) {
     console.error("M-Pesa confirmation error:", error);
 
@@ -1278,6 +1328,7 @@ app.post("/api/mpesa/confirmation", async (req, res) => {
     });
   }
 });
+        
 
 // ==============================
 // START SERVER
