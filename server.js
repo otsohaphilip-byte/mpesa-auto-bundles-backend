@@ -3,6 +3,7 @@ const { Pool } = require("pg");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
+const { installOperations } = require("./operations");
 require("dotenv").config();
 
 const app = express();
@@ -1266,7 +1267,15 @@ app.post("/api/mpesa/confirmation", async (req, res) => {
 const PORT = process.env.PORT || 3000;
 
 initializeDatabase()
-  .then(() => {
+  .then(async () => {
+    await installOperations(
+      app,
+      pool,
+      authenticateToken,
+      requireAdmin,
+      requireReseller
+    );
+
     app.listen(PORT, "0.0.0.0", () => {
       console.log(`M-Pesa Auto Bundles running on port ${PORT}`);
     });
