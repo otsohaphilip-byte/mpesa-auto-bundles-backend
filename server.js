@@ -204,6 +204,22 @@ async function initializeDatabase() {
     ALTER TABLE offers
       ADD COLUMN IF NOT EXISTS approval_status VARCHAR(20)
       DEFAULT 'pending';
+      CREATE TABLE IF NOT EXISTS mpesa_callback_events (
+  id BIGSERIAL PRIMARY KEY,
+  trans_id VARCHAR(50) UNIQUE,
+  business_short_code VARCHAR(30),
+  bill_ref_number VARCHAR(100),
+  trans_amount NUMERIC(12,2),
+  msisdn VARCHAR(20),
+  first_name VARCHAR(100),
+  middle_name VARCHAR(100),
+  last_name VARCHAR(100),
+  trans_time VARCHAR(30),
+  raw_payload JSONB NOT NULL,
+  processing_status VARCHAR(30) NOT NULL DEFAULT 'unmatched',
+  processing_note TEXT,
+  received_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
 
     CREATE INDEX IF NOT EXISTS idx_orders_reseller
       ON orders(reseller_id);
