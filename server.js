@@ -204,6 +204,14 @@ async function initializeDatabase() {
     ALTER TABLE offers
       ADD COLUMN IF NOT EXISTS approval_status VARCHAR(20)
       DEFAULT 'pending';
+      ALTER TABLE resellers
+  ADD COLUMN IF NOT EXISTS email VARCHAR(150);
+
+ALTER TABLE resellers
+  ADD COLUMN IF NOT EXISTS buy_goods_till VARCHAR(30);
+
+ALTER TABLE resellers
+  ADD COLUMN IF NOT EXISTS till_phone VARCHAR(20);
       CREATE TABLE IF NOT EXISTS mpesa_callback_events (
   id BIGSERIAL PRIMARY KEY,
   trans_id VARCHAR(50) UNIQUE,
