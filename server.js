@@ -276,6 +276,9 @@ app.get("/", (req, res) => {
 app.get("/admin", (req, res) => {
   res.sendFile(path.join(__dirname, "admin.html"));
 });
+app.get("/admin-controls.js", (req, res) => {
+  res.sendFile(path.join(__dirname, "admin-controls.js"));
+});
 
 app.get("/logo.png", (req, res) => {
   res.sendFile(path.join(__dirname, "logo.png"));
