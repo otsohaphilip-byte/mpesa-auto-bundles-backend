@@ -507,16 +507,52 @@ app.patch(
 
 app.post("/api/resellers/register", async (req, res) => {
   const client = await pool.connect();
+  let transactionStarted = false;
 
   try {
-    const { name, phone, password } = req.body;
+    const {
+      name,
+      email,
+      phone,
+      buy_goods_till,
+      till_phone,
+      password
+    } = req.body;
 
-    if (!name || !phone || !password) {
+    if (
+      !name ||
+      !email ||
+      !phone ||
+      !buy_goods_till ||
+      !till_phone ||
+      !password
+    ) {
       return sendError(
         res,
         400,
-        "Name, phone number and password are required."
+        "All reseller details are required."
       );
+    }
+
+    const cleanName = String(name).trim();
+    const cleanEmail = String(email).trim().toLowerCase();
+    const cleanPhone = String(phone).trim();
+    const cleanTill = String(buy_goods_till).trim();
+    const cleanTillPhone = String(till_phone).trim();
+
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+      return sendError(res, 400, "Enter a valid email address.");
+    }
+
+    if (
+      !/^\+?[0-9]{9,15}$/.test(cleanPhone) ||
+      !/^\+?[0-9]{9,15}$/.test(cleanTillPhone)
+    ) {
+      return sendError(res, 400, "Enter valid phone numbers.");
+    }
+
+    if (!/^[0-9]{4,15}$/.test(cleanTill)) {
+      return sendError(res, 400, "Enter a valid Buy Goods Till number.");
     }
 
     if (String(password).length < 6) {
@@ -528,30 +564,52 @@ app.post("/api/resellers/register", async (req, res) => {
     }
 
     const existing = await client.query(
-      "SELECT id FROM resellers WHERE phone = $1",
-      [phone]
+      `SELECT id FROM resellers
+       WHERE phone = $1
+       OR LOWER(email) = LOWER($2)
+       OR buy_goods_till = $3
+       LIMIT 1`,
+      [cleanPhone, cleanEmail, cleanTill]
     );
 
     if (existing.rowCount > 0) {
       return sendError(
         res,
         409,
-        "A reseller with this phone number already exists."
+        "This phone, email or Buy Goods Till is already registered."
       );
     }
 
     await client.query("BEGIN");
+    transactionStarted = true;
 
     const resellerResult = await client.query(
-      `INSERT INTO resellers (name, phone, status)
-       VALUES ($1, $2, 'pending')
-       RETURNING id, name, phone, status`,
-      [String(name).trim(), String(phone).trim()]
+      `INSERT INTO resellers (
+        name,
+        email,
+        phone,
+        buy_goods_till,
+        till_phone,
+        status
+      )
+      VALUES ($1, $2, $3, $4, $5, 'pending')
+      RETURNING id, name, email, phone,
+                buy_goods_till, till_phone, status`,
+      [
+        cleanName,
+        cleanEmail,
+        cleanPhone,
+        cleanTill,
+        cleanTillPhone
+      ]
     );
 
     const reseller = resellerResult.rows[0];
 
-    const passwordHash = await bcrypt.hash(password, 12);
+    const passwordHash = await bcrypt.hash(
+      String(password),
+      12
+    );
 
     await client.query(
       `INSERT INTO reseller_credentials
@@ -561,15 +619,21 @@ app.post("/api/resellers/register", async (req, res) => {
     );
 
     await client.query("COMMIT");
+    transactionStarted = false;
 
     res.status(201).json({
       status: "OK",
       message: "Registration received. Await administrator approval."
     });
+
   } catch (error) {
-    await client.query("ROLLBACK");
+    if (transactionStarted) {
+      await client.query("ROLLBACK");
+    }
+
     console.error("Reseller registration error:", error);
     sendError(res, 500, "Reseller registration failed.");
+
   } finally {
     client.release();
   }
