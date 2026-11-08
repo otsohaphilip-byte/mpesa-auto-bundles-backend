@@ -3,6 +3,7 @@ const { Pool } = require("pg");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
+const { installOperations } = require("./operations");
 require("dotenv").config();
 
 const app = express();
