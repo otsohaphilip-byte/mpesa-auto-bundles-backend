@@ -1270,7 +1270,14 @@ app.post("/api/mpesa/confirmation", async (req, res) => {
 const PORT = process.env.PORT || 3000;
 
 initializeDatabase()
-  .then(() => {
+  .then(async () => {
+          await installOperations(
+        app,
+        pool,
+        authenticateToken,
+        requireAdmin,
+        requireReseller
+      );
     app.listen(PORT, "0.0.0.0", () => {
       console.log(`M-Pesa Auto Bundles running on port ${PORT}`);
     });
