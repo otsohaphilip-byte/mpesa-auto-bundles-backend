@@ -1159,7 +1159,6 @@ app.patch(
           "Provide at least one offer field to update."
         );
       }
-      }
 
       if (
         name !== undefined &&
