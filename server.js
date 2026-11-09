@@ -725,7 +725,9 @@ app.get(
   async (req, res) => {
     try {
       const result = await pool.query(
-        `SELECT id, name, phone, status, created_at
+                `SELECT id, name, email, phone,
+                buy_goods_till, till_phone,
+                status, created_at
          FROM resellers
          WHERE id = $1`,
         [req.user.resellerId]
