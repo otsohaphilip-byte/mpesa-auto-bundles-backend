@@ -55,11 +55,19 @@ async function installOperations(
   requireReseller
 ) {
   await pool.query(`
-    CREATE TABLE IF NOT EXISTS platform_settings (
+        CREATE TABLE IF NOT EXISTS platform_settings (
       id INTEGER PRIMARY KEY CHECK (id = 1),
       sales_paused BOOLEAN NOT NULL DEFAULT FALSE,
+      admin_buy_goods_till VARCHAR(30),
+      admin_till_phone VARCHAR(20),
       updated_at TIMESTAMPTZ DEFAULT NOW()
     );
+
+    ALTER TABLE platform_settings
+      ADD COLUMN IF NOT EXISTS admin_buy_goods_till VARCHAR(30);
+
+    ALTER TABLE platform_settings
+      ADD COLUMN IF NOT EXISTS admin_till_phone VARCHAR(20);
 
     INSERT INTO platform_settings (id, sales_paused)
     VALUES (1, FALSE)
