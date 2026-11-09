@@ -22,6 +22,13 @@ class LoginActivity : AppCompatActivity() {
 
     private val green = Color.rgb(0, 140, 69)
     private val darkGreen = Color.rgb(0, 107, 53)
+    private val baseUrl =
+        "https://mpesa-auto-bundles-backend.onrender.com"
+
+    data class LoginAttempt(
+        val token: String? = null,
+        val error: String? = null
+    )
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -87,9 +94,7 @@ class LoginActivity : AppCompatActivity() {
             textSize = 17f
             setTextColor(Color.WHITE)
             setBackgroundColor(green)
-            setOnClickListener {
-                performLogin()
-            }
+            setOnClickListener { performLogin() }
         }
 
         progressBar = ProgressBar(this).apply {
@@ -99,11 +104,9 @@ class LoginActivity : AppCompatActivity() {
         content.addView(logo)
         content.addView(title)
         content.addView(subtitle)
-
         content.addView(phoneInput, fieldParams())
         content.addView(passwordInput, fieldParams())
         content.addView(loginButton, fieldParams())
-
         content.addView(progressBar, fieldParams())
 
         val scroll = ScrollView(this).apply {
@@ -140,50 +143,15 @@ class LoginActivity : AppCompatActivity() {
         progressBar.visibility = View.VISIBLE
 
         Thread {
-            var adminToken: String? = null
-            var resellerToken: String? = null
-            var errorMessage =
-                "Login failed. Check your phone number and password."
+            val admin = sendLogin("/api/admin/login", phone, password)
+            var reseller = LoginAttempt()
 
-            try {
-                val adminResponse = sendLogin(
-                    "/api/admin/login",
+            if (admin.token.isNullOrBlank()) {
+                reseller = sendLogin(
+                    "/api/resellers/login",
                     phone,
                     password
                 )
-
-                if (
-                    adminResponse != null &&
-                    adminResponse.optString("status") == "OK" &&
-                    adminResponse.optString("role") == "admin"
-                ) {
-                    adminToken = adminResponse.optString("token")
-                }
-
-                if (adminToken.isNullOrBlank()) {
-                    val resellerResponse = sendLogin(
-                        "/api/resellers/login",
-                        phone,
-                        password
-                    )
-
-                    if (
-                        resellerResponse != null &&
-                        resellerResponse.optString("status") == "OK"
-                    ) {
-                        resellerToken =
-                            resellerResponse.optString("token")
-                    }
-
-                    if (resellerToken.isNullOrBlank()) {
-                        errorMessage =
-                            "Invalid login details, or reseller account is not approved."
-                    }
-                }
-
-            } catch (e: Exception) {
-                errorMessage =
-                    "Cannot connect. Check your internet and try again."
             }
 
             runOnUiThread {
@@ -191,54 +159,37 @@ class LoginActivity : AppCompatActivity() {
                 loginButton.isEnabled = true
 
                 when {
-                    !adminToken.isNullOrBlank() -> {
-                        getSharedPreferences(
-                            "reseller_session",
-                            MODE_PRIVATE
-                        ).edit().clear().apply()
-
-                        getSharedPreferences(
-                            "admin_session",
-                            MODE_PRIVATE
-                        ).edit()
-                            .putString("token", adminToken)
-                            .apply()
+                    !admin.token.isNullOrBlank() -> {
+                        saveSession("admin_session", admin.token)
+                        clearSession("reseller_session")
 
                         startActivity(
-                            Intent(
-                                this,
-                                AdminDashboardActivity::class.java
-                            )
+                            Intent(this, AdminDashboardActivity::class.java)
                         )
                         finish()
                     }
 
-                    !resellerToken.isNullOrBlank() -> {
-                        getSharedPreferences(
-                            "admin_session",
-                            MODE_PRIVATE
-                        ).edit().clear().apply()
-
-                        getSharedPreferences(
-                            "reseller_session",
-                            MODE_PRIVATE
-                        ).edit()
-                            .putString("token", resellerToken)
-                            .apply()
+                    !reseller.token.isNullOrBlank() -> {
+                        saveSession("reseller_session", reseller.token)
+                        clearSession("admin_session")
 
                         startActivity(
-                            Intent(
-                                this,
-                                ResellerDashboardActivity::class.java
-                            )
+                            Intent(this, ResellerDashboardActivity::class.java)
                         )
                         finish()
                     }
 
                     else -> {
+                        val message = listOfNotNull(
+                            admin.error,
+                            reseller.error
+                        ).joinToString("\n")
+
                         Toast.makeText(
                             this,
-                            errorMessage,
+                            message.ifBlank {
+                                "Login unsuccessful. Check your details."
+                            },
                             Toast.LENGTH_LONG
                         ).show()
                     }
@@ -251,28 +202,31 @@ class LoginActivity : AppCompatActivity() {
         path: String,
         phone: String,
         password: String
-    ): JSONObject? {
-
-        val connection = URL(
-            "https://mpesa-auto-bundles-backend.onrender.com$path"
-        ).openConnection() as HttpURLConnection
-
-        connection.requestMethod = "POST"
-        connection.connectTimeout = 20000
-        connection.readTimeout = 20000
-        connection.doOutput = true
-
-        connection.setRequestProperty(
-            "Content-Type",
-            "application/json"
-        )
-
-        val request = JSONObject().apply {
-            put("phone", phone)
-            put("password", password)
-        }
+    ): LoginAttempt {
+        var connection: HttpURLConnection? = null
 
         return try {
+            connection = URL(baseUrl + path)
+                .openConnection() as HttpURLConnection
+
+            connection.requestMethod = "POST"
+            connection.connectTimeout = 30000
+            connection.readTimeout = 30000
+            connection.doOutput = true
+            connection.setRequestProperty(
+                "Content-Type",
+                "application/json"
+            )
+            connection.setRequestProperty(
+                "Accept",
+                "application/json"
+            )
+
+            val request = JSONObject().apply {
+                put("phone", phone)
+                put("password", password)
+            }
+
             connection.outputStream.use {
                 it.write(request.toString().toByteArray(Charsets.UTF_8))
             }
@@ -290,11 +244,48 @@ class LoginActivity : AppCompatActivity() {
                 ?.use { it.readText() }
                 ?: ""
 
-            if (responseText.isBlank()) null
-            else JSONObject(responseText)
+            val response = if (responseText.isNotBlank()) {
+                JSONObject(responseText)
+            } else {
+                JSONObject()
+            }
 
+            if (
+                code in 200..299 &&
+                response.optString("status") == "OK" &&
+                response.optString("token").isNotBlank()
+            ) {
+                LoginAttempt(token = response.optString("token"))
+            } else {
+                LoginAttempt(
+                    error = response.optString(
+                        "message",
+                        "Server returned HTTP $code for $path"
+                    )
+                )
+            }
+
+        } catch (e: Exception) {
+            LoginAttempt(
+                error = "$path: ${e.javaClass.simpleName}: " +
+                    (e.message ?: "Unknown connection error")
+            )
         } finally {
-            connection.disconnect()
+            connection?.disconnect()
         }
+    }
+
+    private fun saveSession(name: String, token: String) {
+        getSharedPreferences(name, MODE_PRIVATE)
+            .edit()
+            .putString("token", token)
+            .apply()
+    }
+
+    private fun clearSession(name: String) {
+        getSharedPreferences(name, MODE_PRIVATE)
+            .edit()
+            .clear()
+            .apply()
     }
 }
