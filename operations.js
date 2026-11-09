@@ -111,7 +111,87 @@ async function installOperations(
       }
     }
   );
+  // Admin reads platform Buy Goods Till settings
+  app.get(
+    "/api/admin/settings/till",
+    authenticateToken,
+    requireAdmin,
+    async (req, res) => {
+      try {
+        const result = await pool.query(
+          `SELECT admin_buy_goods_till, admin_till_phone
+           FROM platform_settings
+           WHERE id = 1`
+        );
 
+        res.json({
+          status: "OK",
+          settings: result.rows[0] || {}
+        });
+      } catch (error) {
+        console.error("Load Admin Till settings error:", error);
+        res.status(500).json({
+          status: "ERROR",
+          message: "Could not load Till settings."
+        });
+      }
+    }
+  );
+
+  // Admin saves platform Buy Goods Till settings
+  app.patch(
+    "/api/admin/settings/till",
+    authenticateToken,
+    requireAdmin,
+    async (req, res) => {
+      try {
+        const { buyGoodsTill, tillPhone } = req.body || {};
+
+        const till = String(buyGoodsTill || "").trim();
+        let phone = String(tillPhone || "").replace(/[\s+-]/g, "");
+
+        if (!/^\d{5,8}$/.test(till)) {
+          return res.status(400).json({
+            status: "ERROR",
+            message: "Enter a valid Buy Goods Till number."
+          });
+        }
+
+        if (phone.startsWith("0")) {
+          phone = "254" + phone.slice(1);
+        } else if (/^[17]\d{8}$/.test(phone)) {
+          phone = "254" + phone;
+        }
+
+        if (!/^254[17]\d{8}$/.test(phone)) {
+          return res.status(400).json({
+            status: "ERROR",
+            message: "Enter a valid Kenyan phone number."
+          });
+        }
+
+        await pool.query(
+          `UPDATE platform_settings
+           SET admin_buy_goods_till = $1,
+               admin_till_phone = $2,
+               updated_at = NOW()
+           WHERE id = 1`,
+          [till, phone]
+        );
+
+        res.json({
+          status: "OK",
+          message: "Admin Till settings saved."
+        });
+      } catch (error) {
+        console.error("Save Admin Till settings error:", error);
+        res.status(500).json({
+          status: "ERROR",
+          message: "Could not save Till settings."
+        });
+      }
+    }
+  );
   // Admin pauses or resumes platform sales
   app.patch(
     "/api/admin/system/sales-status",
