@@ -260,7 +260,88 @@ ALTER TABLE resellers
   processing_note TEXT,
   received_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+    CREATE TABLE IF NOT EXISTS ussd_devices (
+      id BIGSERIAL PRIMARY KEY,
+      owner_type VARCHAR(20) NOT NULL
+        CHECK (owner_type IN ('admin', 'reseller')),
+      reseller_id BIGINT REFERENCES resellers(id),
+      device_key VARCHAR(150) UNIQUE NOT NULL,
+      device_name VARCHAR(150),
+      agent_phone VARCHAR(20),
+      sim_slot INTEGER,
+      app_version VARCHAR(30),
+      service_status VARCHAR(30) DEFAULT 'offline',
+      last_seen TIMESTAMPTZ,
+      registered_at TIMESTAMPTZ DEFAULT NOW(),
+      CHECK (
+        (owner_type = 'admin' AND reseller_id IS NULL)
+        OR
+        (owner_type = 'reseller' AND reseller_id IS NOT NULL)
+      )
+    );
 
+    CREATE TABLE IF NOT EXISTS ussd_templates (
+      id BIGSERIAL PRIMARY KEY,
+      offer_id BIGINT NOT NULL REFERENCES offers(id),
+      owner_type VARCHAR(20) NOT NULL
+        CHECK (owner_type IN ('admin', 'reseller')),
+      reseller_id BIGINT REFERENCES resellers(id),
+      version INTEGER NOT NULL CHECK (version > 0),
+      entry_code VARCHAR(100) NOT NULL,
+      template_text TEXT NOT NULL,
+      placeholder_name VARCHAR(30) DEFAULT 'ADD',
+      expected_menu_keywords JSONB DEFAULT '[]'::jsonb,
+      expected_product JSONB DEFAULT '{}'::jsonb,
+      verification_status VARCHAR(30) DEFAULT 'candidate',
+      active BOOLEAN DEFAULT FALSE,
+      previous_template_id BIGINT REFERENCES ussd_templates(id),
+      verified_at TIMESTAMPTZ,
+      activated_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE (offer_id, version),
+      CHECK (
+        (owner_type = 'admin' AND reseller_id IS NULL)
+        OR
+        (owner_type = 'reseller' AND reseller_id IS NOT NULL)
+      )
+    );
+
+    CREATE TABLE IF NOT EXISTS ussd_menu_observations (
+      id BIGSERIAL PRIMARY KEY,
+      device_id BIGINT NOT NULL REFERENCES ussd_devices(id),
+      session_id VARCHAR(150) NOT NULL,
+      entry_code VARCHAR(100),
+      menu_text TEXT NOT NULL,
+      menu_hash VARCHAR(128),
+      parse_status VARCHAR(30) DEFAULT 'pending',
+      captured_at TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE (device_id, session_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS ussd_template_change_events (
+      id BIGSERIAL PRIMARY KEY,
+      offer_id BIGINT NOT NULL REFERENCES offers(id),
+      old_template_id BIGINT REFERENCES ussd_templates(id),
+      candidate_template_id BIGINT REFERENCES ussd_templates(id),
+      event_type VARCHAR(50) NOT NULL,
+      detected_reason TEXT,
+      status VARCHAR(30) DEFAULT 'pending_review',
+      reviewed_by_role VARCHAR(20),
+      reviewed_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_ussd_devices_owner
+      ON ussd_devices(owner_type, reseller_id);
+
+    CREATE INDEX IF NOT EXISTS idx_ussd_templates_offer
+      ON ussd_templates(offer_id, active);
+
+    CREATE INDEX IF NOT EXISTS idx_ussd_observations_device
+      ON ussd_menu_observations(device_id, captured_at DESC);
+
+    CREATE INDEX IF NOT EXISTS idx_ussd_change_events_status
+      ON ussd_template_change_events(status, created_at DESC);
     CREATE INDEX IF NOT EXISTS idx_orders_reseller
       ON orders(reseller_id);
 
