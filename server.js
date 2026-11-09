@@ -1879,8 +1879,8 @@ app.post(
              OR j.device_id = $2
            )
          ORDER BY j.created_at ASC
-         FOR UPDATE OF j SKIP LOCKED
-         LIMIT 1`,
+                   LIMIT 1
+          FOR UPDATE OF j SKIP LOCKED`,
         [
           device.reseller_id,
           device.id
