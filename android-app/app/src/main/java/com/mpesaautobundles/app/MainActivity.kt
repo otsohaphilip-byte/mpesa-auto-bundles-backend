@@ -2,6 +2,7 @@
 package com.mpesaautobundles.app
 
 import android.os.Bundle
+import android.content.Intent
 import android.graphics.Color
 import android.view.Gravity
 import android.widget.Button
@@ -52,8 +53,13 @@ class MainActivity : AppCompatActivity() {
             text = "RESELLER LOGIN"
             setBackgroundColor(green)
             setTextColor(Color.WHITE)
+
             setOnClickListener {
-                // Reseller login will be connected next.
+                val intent = Intent(
+                    this@MainActivity,
+                    LoginActivity::class.java
+                )
+                startActivity(intent)
             }
         }
 
