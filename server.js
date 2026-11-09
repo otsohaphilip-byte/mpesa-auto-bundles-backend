@@ -204,6 +204,38 @@ async function initializeDatabase() {
     ALTER TABLE offers
       ADD COLUMN IF NOT EXISTS approval_status VARCHAR(20)
       DEFAULT 'pending';
+          ALTER TABLE offers
+      ADD COLUMN IF NOT EXISTS commission_per_sale NUMERIC(12,2) DEFAULT 0;
+
+    ALTER TABLE offers
+      ADD COLUMN IF NOT EXISTS bingwa_price NUMERIC(12,2);
+
+    ALTER TABLE offers
+      ADD COLUMN IF NOT EXISTS safaricom_price NUMERIC(12,2);
+
+    ALTER TABLE offers
+      ADD COLUMN IF NOT EXISTS ussd_code VARCHAR(100);
+
+    ALTER TABLE offers
+      ADD COLUMN IF NOT EXISTS alternative_ussd_code VARCHAR(100);
+
+    ALTER TABLE offers
+      ADD COLUMN IF NOT EXISTS menu_keyword VARCHAR(100);
+
+    ALTER TABLE offers
+      ADD COLUMN IF NOT EXISTS active_start_time TIME;
+
+    ALTER TABLE offers
+      ADD COLUMN IF NOT EXISTS active_end_time TIME;
+
+    ALTER TABLE offers
+      ADD COLUMN IF NOT EXISTS category VARCHAR(80);
+
+    ALTER TABLE offers
+      ADD COLUMN IF NOT EXISTS delivery_method VARCHAR(50);
+
+    ALTER TABLE offers
+      ADD COLUMN IF NOT EXISTS recovery_strategy VARCHAR(50) DEFAULT 'none';
       ALTER TABLE resellers
   ADD COLUMN IF NOT EXISTS email VARCHAR(150);
 
