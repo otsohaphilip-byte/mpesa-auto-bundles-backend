@@ -817,12 +817,22 @@ app.post(
     const client = await pool.connect();
 
     try {
-      const {
+            const {
         catalog_product_id,
         name,
-        price
+        price,
+        commission_per_sale,
+        bingwa_price,
+        safaricom_price,
+        ussd_code,
+        alternative_ussd_code,
+        menu_keyword,
+        active_start_time,
+        active_end_time,
+        category,
+        delivery_method,
+        recovery_strategy
       } = req.body;
-
       if (!["admin", "reseller"].includes(req.user.role)) {
         return sendError(res, 403, "Access denied.");
       }
