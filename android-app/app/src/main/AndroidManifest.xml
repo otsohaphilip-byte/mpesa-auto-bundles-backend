@@ -1,4 +1,3 @@
-
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
@@ -9,6 +8,14 @@
         android:label="M-Pesa Auto Bundles"
         android:theme="@style/AppTheme"
         android:usesCleartextTraffic="false">
+
+        <activity
+            android:name=".AdminDashboardActivity"
+            android:exported="false" />
+
+        <activity
+            android:name=".AdminLoginActivity"
+            android:exported="false" />
 
         <activity
             android:name=".ResellerDashboardActivity"
