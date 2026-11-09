@@ -1218,15 +1218,37 @@ app.patch(
         }
       }
 
-      const result = await client.query(
+            const result = await client.query(
         `UPDATE offers
          SET name = $1,
-             price = $2
-         WHERE id = $3
+             price = $2,
+             commission_per_sale = COALESCE($3, commission_per_sale),
+             bingwa_price = COALESCE($4, bingwa_price),
+             safaricom_price = COALESCE($5, safaricom_price),
+             ussd_code = COALESCE($6, ussd_code),
+             alternative_ussd_code = COALESCE($7, alternative_ussd_code),
+             menu_keyword = COALESCE($8, menu_keyword),
+             active_start_time = COALESCE($9, active_start_time),
+             active_end_time = COALESCE($10, active_end_time),
+             category = COALESCE($11, category),
+             delivery_method = COALESCE($12, delivery_method),
+             recovery_strategy = COALESCE($13, recovery_strategy)
+         WHERE id = $14
          RETURNING *`,
         [
           name === undefined ? offer.name : name.trim(),
           newPrice,
+          commission_per_sale ?? null,
+          bingwa_price ?? null,
+          safaricom_price ?? null,
+          ussd_code ?? null,
+          alternative_ussd_code ?? null,
+          menu_keyword ?? null,
+          active_start_time ?? null,
+          active_end_time ?? null,
+          category ?? null,
+          delivery_method ?? null,
+          recovery_strategy ?? null,
           id
         ]
       );
