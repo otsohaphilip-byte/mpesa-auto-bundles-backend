@@ -2,6 +2,7 @@
 package com.mpesaautobundles.app
 
 import android.os.Bundle
+import android.content.Intent
 import android.graphics.Color
 import android.view.Gravity
 import android.view.View
@@ -89,7 +90,6 @@ class LoginActivity : AppCompatActivity() {
         layout.addView(logo)
         layout.addView(title)
         layout.addView(subtitle)
-
         layout.addView(phoneInput, fieldParams())
         layout.addView(passwordInput, fieldParams())
         layout.addView(loginButton, fieldParams())
@@ -204,13 +204,25 @@ class LoginActivity : AppCompatActivity() {
                     ).edit()
                         .putString("token", token)
                         .apply()
-                }
 
-                Toast.makeText(
-                    this,
-                    message,
-                    Toast.LENGTH_LONG
-                ).show()
+                    Toast.makeText(
+                        this,
+                        message,
+                        Toast.LENGTH_SHORT
+                    ).show()
+
+                    startActivity(
+                        Intent(this, ResellerDashboardActivity::class.java)
+                    )
+                    finish()
+
+                } else {
+                    Toast.makeText(
+                        this,
+                        message,
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
             }
 
         }.start()
