@@ -71,7 +71,7 @@ class LoginActivity : AppCompatActivity() {
             hint = "Password"
             inputType = InputType.TYPE_CLASS_TEXT or
                 InputType.TYPE_TEXT_VARIATION_PASSWORD
-            singleLine = true
+            setSingleLine(true)
         }
 
         loginButton = Button(this).apply {
@@ -139,6 +139,7 @@ class LoginActivity : AppCompatActivity() {
                 connection.connectTimeout = 20000
                 connection.readTimeout = 20000
                 connection.doOutput = true
+
                 connection.setRequestProperty(
                     "Content-Type",
                     "application/json"
@@ -173,7 +174,10 @@ class LoginActivity : AppCompatActivity() {
 
                 val response = JSONObject(responseText)
 
-                if (response.optString("status") == "OK") {
+                if (
+                    responseCode in 200..299 &&
+                    response.optString("status") == "OK"
+                ) {
                     token = response.optString("token")
 
                     if (token.isNullOrBlank()) {
