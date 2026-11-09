@@ -64,7 +64,7 @@ class LoginActivity : AppCompatActivity() {
         phoneInput = EditText(this).apply {
             hint = "Phone number"
             inputType = InputType.TYPE_CLASS_PHONE
-            singleLine = true
+            setSingleLine(true)
         }
 
         passwordInput = EditText(this).apply {
