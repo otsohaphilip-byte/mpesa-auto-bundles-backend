@@ -1121,18 +1121,44 @@ app.patch(
     const client = await pool.connect();
 
     try {
-      const id = req.params.id;
-      const { name, price } = req.body;
+            const id = req.params.id;
+      const {
+        name,
+        price,
+        commission_per_sale,
+        bingwa_price,
+        safaricom_price,
+        ussd_code,
+        alternative_ussd_code,
+        menu_keyword,
+        active_start_time,
+        active_end_time,
+        category,
+        delivery_method,
+        recovery_strategy
+      } = req.body;
 
       if (
         name === undefined &&
-        price === undefined
+        price === undefined &&
+        commission_per_sale === undefined &&
+        bingwa_price === undefined &&
+        safaricom_price === undefined &&
+        ussd_code === undefined &&
+        alternative_ussd_code === undefined &&
+        menu_keyword === undefined &&
+        active_start_time === undefined &&
+        active_end_time === undefined &&
+        category === undefined &&
+        delivery_method === undefined &&
+        recovery_strategy === undefined
       ) {
         return sendError(
           res,
           400,
-          "Provide an offer name or price to update."
+          "Provide at least one offer field to update."
         );
+      }
       }
 
       if (
