@@ -64,7 +64,7 @@ class AdminLoginActivity : AppCompatActivity() {
         phoneInput = EditText(this).apply {
             hint = "Administrator phone number"
             inputType = InputType.TYPE_CLASS_PHONE
-            singleLine = true
+            setSingleLine(true)
         }
 
         passwordInput = EditText(this).apply {
@@ -78,7 +78,6 @@ class AdminLoginActivity : AppCompatActivity() {
             text = "ADMIN LOGIN"
             setBackgroundColor(green)
             setTextColor(Color.WHITE)
-
             setOnClickListener {
                 loginAdmin()
             }
