@@ -203,9 +203,13 @@ button:disabled {
            placeholder="Enter admin phone number">
 
     <label>Password</label>
-    <input id="password" type="password"
-           placeholder="Enter admin password">
-
+<div style="display:flex; align-items:center; gap:8px;">
+  <input id="password" type="password"
+         placeholder="Enter admin password"
+         style="flex:1; min-width:0;">
+  <button type="button"
+          onclick="toggleAdminPasswordVisibility()">👁️</button>
+</div>
     <button onclick="login()">Login</button>
   </div>
 
@@ -301,7 +305,12 @@ async function request(path, options = {}) {
 
   return data;
 }
+function toggleAdminPasswordVisibility() {
+  const passwordInput = document.getElementById("password");
 
+  passwordInput.type =
+    passwordInput.type === "password" ? "text" : "password";
+  }
 async function login() {
   const phone = document.getElementById("phone").value.trim();
   const password = document.getElementById("password").value;
