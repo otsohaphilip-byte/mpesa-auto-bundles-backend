@@ -336,7 +336,43 @@ ALTER TABLE resellers
 
     CREATE INDEX IF NOT EXISTS idx_ussd_templates_offer
       ON ussd_templates(offer_id, active);
+    CREATE TABLE IF NOT EXISTS ussd_agent_jobs (
+      id BIGSERIAL PRIMARY KEY,
+      job_reference VARCHAR(100) UNIQUE NOT NULL,
+      owner_type VARCHAR(20) NOT NULL
+        CHECK (owner_type IN ('admin', 'reseller')),
+      reseller_id BIGINT REFERENCES resellers(id),
+      offer_id BIGINT NOT NULL REFERENCES offers(id),
+      device_id BIGINT REFERENCES ussd_devices(id),
+      payment_receipt VARCHAR(50) UNIQUE NOT NULL,
+      recipient_phone VARCHAR(20) NOT NULL,
+      amount NUMERIC(12,2) NOT NULL,
+      status VARCHAR(30) NOT NULL DEFAULT 'pending'
+        CHECK (status IN (
+          'pending', 'processing', 'completed',
+          'failed', 'retry'
+        )),
+      attempts INTEGER NOT NULL DEFAULT 0,
+      max_attempts INTEGER NOT NULL DEFAULT 5,
+      next_attempt_at TIMESTAMPTZ DEFAULT NOW(),
+      locked_at TIMESTAMPTZ,
+      last_error TEXT,
+      result_details JSONB DEFAULT '{}'::jsonb,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW(),
+      completed_at TIMESTAMPTZ,
+      CHECK (
+        (owner_type = 'admin' AND reseller_id IS NULL)
+        OR
+        (owner_type = 'reseller' AND reseller_id IS NOT NULL)
+      )
+    );
 
+    CREATE INDEX IF NOT EXISTS idx_ussd_jobs_ready
+      ON ussd_agent_jobs(status, next_attempt_at, created_at);
+
+    CREATE INDEX IF NOT EXISTS idx_ussd_jobs_owner
+      ON ussd_agent_jobs(owner_type, reseller_id, status);
     CREATE INDEX IF NOT EXISTS idx_ussd_observations_device
       ON ussd_menu_observations(device_id, captured_at DESC);
 
