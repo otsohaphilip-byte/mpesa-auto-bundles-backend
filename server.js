@@ -903,7 +903,7 @@ app.post(
 
       const active = isAdmin;
 
-      const result = await client.query(
+            const result = await client.query(
         `INSERT INTO offers (
            reseller_id,
            name,
@@ -912,9 +912,24 @@ app.post(
            bundle_code,
            catalog_product_id,
            approval_status,
-           active
+           active,
+           commission_per_sale,
+           bingwa_price,
+           safaricom_price,
+           ussd_code,
+           alternative_ussd_code,
+           menu_keyword,
+           active_start_time,
+           active_end_time,
+           category,
+           delivery_method,
+           recovery_strategy
          )
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+         VALUES (
+           $1, $2, $3, $4, $5, $6, $7, $8,
+           $9, $10, $11, $12, $13, $14, $15,
+           $16, $17, $18, $19
+         )
          RETURNING *`,
         [
           resellerId,
@@ -924,7 +939,18 @@ app.post(
           productResult.rows[0].bundle_code || null,
           catalog_product_id,
           approvalStatus,
-          active
+          active,
+          commission_per_sale ?? 0,
+          bingwa_price || null,
+          safaricom_price || null,
+          ussd_code || null,
+          alternative_ussd_code || null,
+          menu_keyword || null,
+          active_start_time || null,
+          active_end_time || null,
+          category || null,
+          delivery_method || null,
+          recovery_strategy || "none"
         ]
       );
 
