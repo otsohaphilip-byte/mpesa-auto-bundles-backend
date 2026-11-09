@@ -1,7 +1,7 @@
+
 package com.mpesaautobundles.app
 
 import android.os.Bundle
-import android.content.Intent
 import android.graphics.Color
 import android.view.Gravity
 import android.widget.Button
@@ -29,7 +29,7 @@ class MainActivity : AppCompatActivity() {
 
         val logo = TextView(this).apply {
             text = "⚡"
-            textSize = 76f
+            textSize = 80f
             gravity = Gravity.CENTER
             setTextColor(yellow)
         }
@@ -48,21 +48,12 @@ class MainActivity : AppCompatActivity() {
             setTextColor(Color.DKGRAY)
         }
 
-        val adminButton = Button(this).apply {
-            text = "ADMIN LOGIN"
+        val resellerButton = Button(this).apply {
+            text = "RESELLER LOGIN"
             setBackgroundColor(green)
             setTextColor(Color.WHITE)
             setOnClickListener {
-                // Admin login screen will be added next.
-            }
-        }
-
-        val resellerButton = Button(this).apply {
-            text = "RESELLER LOGIN"
-            setBackgroundColor(yellow)
-            setTextColor(Color.BLACK)
-            setOnClickListener {
-                // Reseller login screen will be added next.
+                // Reseller login will be connected next.
             }
         }
 
@@ -70,18 +61,16 @@ class MainActivity : AppCompatActivity() {
         layout.addView(title)
         layout.addView(subtitle)
 
-        layout.addView(adminButton, buttonParams())
-        layout.addView(resellerButton, buttonParams())
+        layout.addView(
+            resellerButton,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                60
+            ).apply {
+                setMargins(0, 28, 0, 0)
+            }
+        )
 
         setContentView(layout)
-    }
-
-    private fun buttonParams(): LinearLayout.LayoutParams {
-        return LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT,
-            60
-        ).apply {
-            setMargins(0, 18, 0, 0)
-        }
     }
 }
