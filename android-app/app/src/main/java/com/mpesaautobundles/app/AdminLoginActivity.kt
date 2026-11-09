@@ -71,7 +71,7 @@ class AdminLoginActivity : AppCompatActivity() {
             hint = "Administrator password"
             inputType = InputType.TYPE_CLASS_TEXT or
                 InputType.TYPE_TEXT_VARIATION_PASSWORD
-            singleLine = true
+            setSingleLine(true)
         }
 
         loginButton = Button(this).apply {
