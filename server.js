@@ -1371,11 +1371,7 @@ app.post(
           ? req.user.resellerId
           : null;
 
-      const approvalStatus =
-        req.user.role === "admin"
-          ? "approved"
-          : "pending";
-
+            const approvalStatus = "approved";
       const active = false;
 
       const result = await client.query(
