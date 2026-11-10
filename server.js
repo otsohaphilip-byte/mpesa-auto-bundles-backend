@@ -1315,11 +1315,11 @@ app.post(
     const productId = Number(req.body.catalog_product_id);
     const price = validateOfferPrice(req.body.price);
     const bingwaPrice = validateOfferPrice(req.body.bingwa_price);
-    if (
+        if (
       !Number.isSafeInteger(productId) ||
       productId < 1 ||
-      !price
-            !bingwaPrice ||
+      !price ||
+      !bingwaPrice
     ) {
       return sendError(
         res,
