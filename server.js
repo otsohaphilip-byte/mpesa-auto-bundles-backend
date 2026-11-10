@@ -1378,7 +1378,6 @@ app.post(
       const result = await client.query(
         `INSERT INTO offers
           (
-                      (
             reseller_id,
             catalog_product_id,
             name,
