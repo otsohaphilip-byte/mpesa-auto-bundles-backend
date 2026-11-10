@@ -1408,9 +1408,9 @@ app.post(
 
       return res.status(201).json({
         status: "SUCCESS",
-        message:
+                message:
           req.user.role === "reseller"
-            ? "Offer submitted for administrator approval."
+            ? "Your offer was created. Activate it when ready."
             : "Admin offer created. Activate it when ready.",
         offer: result.rows[0]
       });
