@@ -1378,10 +1378,12 @@ app.post(
       const result = await client.query(
         `INSERT INTO offers
           (
+                      (
             reseller_id,
             catalog_product_id,
             name,
             price,
+            bingwa_price,
             approval_status,
             ussd_code,
             menu_keyword,
@@ -1389,13 +1391,14 @@ app.post(
             delivery_method,
             active
           )
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
          RETURNING *`,
         [
           resellerId,
           product.id,
           product.name,
           price,
+          bingwaPrice,
           approvalStatus,
           product.ussd_code,
           product.menu_keyword,
