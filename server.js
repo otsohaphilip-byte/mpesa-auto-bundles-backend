@@ -1678,7 +1678,7 @@ app.patch(
 
       return res.json({
         status: "SUCCESS",
-        message: "Offer updated and submitted for approval.",
+        message: "Your offer was updated successfully.",
         offer: result.rows[0]
       });
     } catch (error) {
