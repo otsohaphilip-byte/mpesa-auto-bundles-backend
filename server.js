@@ -2440,6 +2440,106 @@ app.get(
           p.receipt_number,
           p.amount,
           p.payer_phone,
+
+// SECTION 15: TRANSACTION HISTORY
+
+app.get(
+  "/api/transactions",
+  authenticateToken,
+  requireAdminOrReseller,
+  async (req, res) => {
+    try {
+      let query;
+      let values = [];
+
+      if (req.user.role === "admin") {
+        query = `
+          SELECT
+            o.id,
+            o.reseller_id,
+            o.offer_id,
+            o.payer_phone,
+            o.recipient_phone,
+            o.amount,
+            o.status,
+            o.payment_receipt,
+            o.created_at,
+            o.updated_at,
+            f.name AS offer_name,
+            r.name AS reseller_name,
+            p.receipt_number,
+            p.status AS payment_status
+          FROM orders o
+          LEFT JOIN offers f
+            ON f.id = o.offer_id
+          LEFT JOIN resellers r
+            ON r.id = o.reseller_id
+          LEFT JOIN payments p
+            ON p.receipt_number = o.payment_receipt
+          ORDER BY o.created_at DESC
+          LIMIT 200
+        `;
+      } else {
+        query = `
+          SELECT
+            o.id,
+            o.reseller_id,
+            o.offer_id,
+            o.payer_phone,
+            o.recipient_phone,
+            o.amount,
+            o.status,
+            o.payment_receipt,
+            o.created_at,
+            o.updated_at,
+            f.name AS offer_name,
+            p.receipt_number,
+            p.status AS payment_status
+          FROM orders o
+          LEFT JOIN offers f
+            ON f.id = o.offer_id
+          LEFT JOIN payments p
+            ON p.receipt_number = o.payment_receipt
+          WHERE o.reseller_id = $1
+          ORDER BY o.created_at DESC
+          LIMIT 200
+        `;
+
+        values = [req.user.resellerId];
+      }
+
+      const result = await pool.query(query, values);
+
+      return res.json({
+        status: "SUCCESS",
+        transactions: result.rows
+      });
+    } catch (error) {
+      console.error("Transaction history error:", error.message);
+
+      return sendError(
+        res,
+        500,
+        "Unable to load transaction history."
+      );
+    }
+  }
+);
+
+// ADMIN: VIEW UNMATCHED PAYMENTS
+
+app.get(
+  "/api/admin/payments/unmatched",
+  authenticateToken,
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const result = await pool.query(`
+        SELECT
+          p.id,
+          p.receipt_number,
+          p.amount,
+          p.payer_phone,
           p.business_till,
           p.status,
           p.created_at
@@ -2466,119 +2566,7 @@ app.get(
     }
   }
 );
-
-app.get(
-  "/api/transactions",
-  authenticateToken,
-  requireAdminOrReseller,
-  async (req, res) => {
-    try {
-      let query;
-      let values = [];
-
-      if (req.user.role === "admin") {
-        query = `
-          SELECT
-            o.id,
-            o.reseller_id,
-            o.offer_id,
-            o.customer_phone,
-            o.amount,
-            o.status,
-            o.delivery_reference,
-            o.created_at,
-            o.updated_at,
-            f.name AS offer_name,
-            r.full_name AS reseller_name,
-            p.receipt_number,
-            p.status AS payment_status
-          FROM orders o
-          LEFT JOIN offers f ON f.id = o.offer_id
-          LEFT JOIN resellers r ON r.id = o.reseller_id
-          LEFT JOIN payments p ON p.order_id = o.id
-          ORDER BY o.created_at DESC
-          LIMIT 200
-        `;
-      } else {
-        query = `
-          SELECT
-            o.id,
-            o.reseller_id,
-            o.offer_id,
-            o.customer_phone,
-            o.amount,
-            o.status,
-            o.delivery_reference,
-            o.created_at,
-            o.updated_at,
-            f.name AS offer_name,
-            p.receipt_number,
-            p.status AS payment_status
-          FROM orders o
-          LEFT JOIN offers f ON f.id = o.offer_id
-          LEFT JOIN payments p ON p.order_id = o.id
-          WHERE o.reseller_id = $1
-          ORDER BY o.created_at DESC
-          LIMIT 200
-        `;
-
-        values = [req.user.resellerId];
-      }
-
-      const result = await pool.query(query, values);
-
-      return res.json({
-        status: "SUCCESS",
-        transactions: result.rows
-      });
-    } catch (error) {
-      console.error("Transaction history error:", error.message);
-      return sendError(
-        res,
-        500,
-        "Unable to load transaction history."
-      );
-    }
-  }
-);
-
-// ADMIN: VIEW UNMATCHED PAYMENTS
-
-app.get(
-  "/api/admin/payments/unmatched",
-  authenticateToken,
-  requireAdmin,
-  async (req, res) => {
-    try {
-      const result = await pool.query(`
-        SELECT
-          id,
-          receipt_number,
-          amount,
-          payer_phone,
-          business_till,
-          status,
-          created_at
-        FROM payments
-        WHERE order_id IS NULL
-        ORDER BY created_at DESC
-        LIMIT 200
-      `);
-
-      return res.json({
-        status: "SUCCESS",
-        payments: result.rows
-      });
-    } catch (error) {
-      console.error("Unmatched payments error:", error.message);
-      return sendError(
-        res,
-        500,
-        "Unable to load unmatched payments."
-      );
-    }
-  }
-);
+              
 // SECTION 16: RESELLER SALES CONTROLS
 
 app.patch(
