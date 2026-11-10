@@ -1314,11 +1314,12 @@ app.post(
   async (req, res) => {
     const productId = Number(req.body.catalog_product_id);
     const price = validateOfferPrice(req.body.price);
-
+    const bingwaPrice = validateOfferPrice(req.body.bingwa_price);
     if (
       !Number.isSafeInteger(productId) ||
       productId < 1 ||
       !price
+            !bingwaPrice ||
     ) {
       return sendError(
         res,
