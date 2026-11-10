@@ -1655,9 +1655,7 @@ app.patch(
       return sendError(res, 400, "No supported changes supplied.");
     }
 
-    updates.push("approval_status = 'pending'");
-    updates.push("active = FALSE");
-
+    
     values.push(offerId, req.user.resellerId);
 
     try {
