@@ -1324,7 +1324,7 @@ app.post(
       return sendError(
         res,
         400,
-        "Select a catalogue product and enter a valid selling price."
+        "Select a catalogue product and enter valid selling and Bingwa prices."
       );
     }
 
