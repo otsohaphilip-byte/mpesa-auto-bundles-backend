@@ -1650,7 +1650,16 @@ app.patch(
       updates.push(`price = $${position++}`);
       values.push(price);
     }
+    if (req.body.bingwa_price !== undefined) {
+      const bingwaPrice = validateOfferPrice(req.body.bingwa_price);
 
+      if (!bingwaPrice) {
+        return sendError(res, 400, "Enter a valid Bingwa price.");
+      }
+
+      updates.push(`bingwa_price = $${position++}`);
+      values.push(bingwaPrice);
+        }
     if (!updates.length) {
       return sendError(res, 400, "No supported changes supplied.");
     }
