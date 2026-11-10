@@ -846,6 +846,103 @@ async function updateReseller(id, status) {
     sessionStorage.removeItem("adminToken");
   }
 })();
+  
+function showDashboardSection(sectionId) {
+  const sections = [
+    "homeSection",
+    "quickDialSection",
+    "offersSection",
+    "addOfferPanel",
+    "earningsSection",
+    "analyticsSection",
+    "transactionsSection",
+    "accountSection",
+    "settingsSection"
+  ];
+
+  sections.forEach(id => {
+    document.getElementById(id).classList.add("hidden");
+  });
+
+  const selected = document.getElementById(sectionId);
+
+  if (selected) {
+    selected.classList.remove("hidden");
+  }
+
+  if (sectionId === "addOfferPanel") {
+    loadCatalogue();
+  }
+
+  if (sectionId === "quickDialSection") {
+    loadQuickDialOffers();
+  }
+}
+
+function loadQuickDialOffers() {
+  const select = document.getElementById("quickDialOffer");
+
+  select.innerHTML = '<option value="">Choose an offer</option>';
+
+  allOffers.forEach(offer => {
+    const option = document.createElement("option");
+    option.value = offer.id;
+    option.textContent =
+      (offer.name || offer.offer_name || "Bundle") +
+      " — KSh " + (offer.price || "0");
+
+    select.appendChild(option);
+  });
+}
+
+function startQuickDial() {
+  const phone = document.getElementById("quickDialPhone").value.trim();
+  const offerId = document.getElementById("quickDialOffer").value;
+
+  if (!/^254[17][0-9]{8}$/.test(phone)) {
+    alert("Enter a valid Kenyan phone number starting with 254.");
+    return;
+  }
+
+  if (!offerId) {
+    alert("Please select an offer first.");
+    return;
+  }
+
+  alert(
+    "Quick Dial screen is ready. Actual bundle delivery " +
+    "will be connected after the fulfilment system is implemented."
+  );
+}
+
+async function toggleDashboardSales() {
+  const button = document.getElementById("salesToggle");
+
+  button.disabled = true;
+
+  try {
+    const current = await request("/api/system/sales-status");
+    const paused = !current.salesPaused;
+
+    if (!confirm(paused ? "Pause platform sales?" : "Resume platform sales?")) {
+      return;
+    }
+
+    await request("/api/admin/system/sales-status", {
+      method: "PATCH",
+      body: JSON.stringify({ paused })
+    });
+
+    button.textContent = paused ? "SALES PAUSED ●" : "SALES ON ●";
+    button.style.background = paused ? "#dc2626" : "#16834a";
+
+  } catch (error) {
+    alert("Could not change sales status: " + error.message);
+  } finally {
+    button.disabled = false;
+  }
+}
+  
 </script>
 <script src="/admin-controls.js"></script>
 </body>
