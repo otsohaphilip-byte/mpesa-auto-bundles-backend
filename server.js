@@ -1,9 +1,11 @@
+
 const express = require("express");
 const { Pool } = require("pg");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
 const path = require("path");
+
 const {
   installOperations,
   getSalesPaused,
@@ -73,7 +75,8 @@ function createToken(payload) {
   return jwt.sign(payload, process.env.JWT_SECRET, {
     expiresIn: "12h"
   });
-  }
+}
+
 async function lockOfferPrices(client) {
   await client.query(
     "SELECT pg_advisory_xact_lock(734921)"
@@ -172,6 +175,7 @@ async function createCoreTables() {
     );
   `);
 }
+
 async function createAdditionalTables() {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS token_wallets (
@@ -243,6 +247,7 @@ async function createAdditionalTables() {
     );
   `);
 }
+
 async function createFulfilmentTables() {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS ussd_devices (
@@ -311,80 +316,104 @@ async function createFulfilmentTables() {
     CREATE INDEX IF NOT EXISTS idx_ussd_jobs_status_created
       ON ussd_agent_jobs(status, created_at);
   `);
+        }
+  
+async function createAuthenticationTables() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS admin_users (
+      id BIGSERIAL PRIMARY KEY,
+      email VARCHAR(255) NOT NULL UNIQUE,
+      password_hash TEXT NOT NULL,
+      phone VARCHAR(20),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS password_reset_otps (
+      id BIGSERIAL PRIMARY KEY,
+      account_type VARCHAR(20) NOT NULL,
+      account_id BIGINT NOT NULL,
+      otp_hash TEXT NOT NULL,
+      expires_at TIMESTAMPTZ NOT NULL,
+      attempts INTEGER NOT NULL DEFAULT 0,
+      used_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_password_reset_lookup
+      ON password_reset_otps(account_type, account_id, created_at);
+  `);
 }
+
+async function runDatabaseMigrations() {
+  await pool.query(`
+    ALTER TABLE resellers
+      ADD COLUMN IF NOT EXISTS password_reset_phone VARCHAR(20);
+
+    ALTER TABLE offers
+      ADD COLUMN IF NOT EXISTS approval_status VARCHAR(20)
+        NOT NULL DEFAULT 'pending';
+
+    ALTER TABLE offers
+      ADD COLUMN IF NOT EXISTS active BOOLEAN
+        NOT NULL DEFAULT FALSE;
+
+    ALTER TABLE orders
+      ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ
+        NOT NULL DEFAULT NOW();
+
+    ALTER TABLE payments
+      ADD COLUMN IF NOT EXISTS business_till VARCHAR(30);
+
+    ALTER TABLE payments
+      ADD COLUMN IF NOT EXISTS payer_phone VARCHAR(20);
+  `);
+}
+
 async function initializeDatabase() {
   await createCoreTables();
   await createAdditionalTables();
   await createFulfilmentTables();
-
-  await pool.query(`
-    ALTER TABLE resellers
-      ADD COLUMN IF NOT EXISTS sales_paused
-      BOOLEAN NOT NULL DEFAULT FALSE;
-
-    ALTER TABLE offers
-      ADD COLUMN IF NOT EXISTS catalog_product_id BIGINT,
-      ADD COLUMN IF NOT EXISTS approval_status
-        VARCHAR(20) NOT NULL DEFAULT 'pending',
-      ADD COLUMN IF NOT EXISTS commission_per_sale
-        NUMERIC(12,2) DEFAULT 0,
-      ADD COLUMN IF NOT EXISTS bingwa_price NUMERIC(12,2),
-      ADD COLUMN IF NOT EXISTS safaricom_price NUMERIC(12,2),
-      ADD COLUMN IF NOT EXISTS ussd_code TEXT,
-      ADD COLUMN IF NOT EXISTS alternative_ussd_code TEXT,
-      ADD COLUMN IF NOT EXISTS menu_keyword TEXT,
-      ADD COLUMN IF NOT EXISTS active_start_time TIME,
-      ADD COLUMN IF NOT EXISTS active_end_time TIME,
-      ADD COLUMN IF NOT EXISTS daily_start_time TIME,
-      ADD COLUMN IF NOT EXISTS daily_end_time TIME,
-      ADD COLUMN IF NOT EXISTS category VARCHAR(100),
-      ADD COLUMN IF NOT EXISTS delivery_method VARCHAR(50),
-      ADD COLUMN IF NOT EXISTS recovery_strategy TEXT;
-
-    ALTER TABLE product_catalog
-      ADD COLUMN IF NOT EXISTS bingwa_price NUMERIC(12,2),
-      ADD COLUMN IF NOT EXISTS safaricom_price NUMERIC(12,2),
-      ADD COLUMN IF NOT EXISTS category VARCHAR(100),
-      ADD COLUMN IF NOT EXISTS validity VARCHAR(100),
-      ADD COLUMN IF NOT EXISTS ussd_code TEXT,
-      ADD COLUMN IF NOT EXISTS menu_keyword TEXT,
-      ADD COLUMN IF NOT EXISTS delivery_method VARCHAR(50),
-      ADD COLUMN IF NOT EXISTS active BOOLEAN NOT NULL DEFAULT TRUE;
-
-    CREATE INDEX IF NOT EXISTS idx_resellers_status
-      ON resellers(status);
-
-    CREATE INDEX IF NOT EXISTS idx_payments_receipt
-      ON payments(receipt_number);
-
-    CREATE INDEX IF NOT EXISTS idx_mpesa_events_status
-      ON mpesa_callback_events(processing_status);
-  `);
+  await createAuthenticationTables();
+  await runDatabaseMigrations();
 
   console.log("Database tables and migrations are ready.");
 }
-function authenticateToken(req, res, next) {
-  const authHeader = req.headers.authorization;
 
-  if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    return sendError(res, 401, "Authentication required.");
-  }
+async function authenticateToken(req, res, next) {
+  try {
+    const header = req.headers.authorization || "";
+    const parts = header.split(" ");
 
-  const token = authHeader.substring(7);
+    if (parts.length !== 2 || parts[0] !== "Bearer") {
+      return sendError(res, 401, "Authentication required.");
+    }
 
-  if (!process.env.JWT_SECRET) {
-    console.error("JWT_SECRET is not configured.");
-    return sendError(res, 500, "Security configuration error.");
-  }
+    if (!process.env.JWT_SECRET) {
+      return sendError(
+        res,
+        500,
+        "Authentication security is not configured."
+      );
+    }
 
-  jwt.verify(token, process.env.JWT_SECRET, (error, decoded) => {
-    if (error) {
-      return sendError(res, 401, "Session expired or invalid.");
+    const decoded = jwt.verify(
+      parts[1],
+      process.env.JWT_SECRET
+    );
+
+    if (
+      !decoded ||
+      !["admin", "reseller"].includes(decoded.role)
+    ) {
+      return sendError(res, 401, "Invalid login session.");
     }
 
     req.user = decoded;
     next();
-  });
+  } catch (error) {
+    return sendError(res, 401, "Your login session is invalid or expired.");
+  }
 }
 
 function requireAdmin(req, res, next) {
@@ -414,111 +443,317 @@ function requireAdminOrReseller(req, res, next) {
   next();
 }
 
-app.get("/", (req, res) => {
-  res.json({
-    status: "OK",
-    message: "M-Pesa Auto Bundles API is running."
-  });
-});
-
-app.get("/health", async (req, res) => {
-  try {
-    await pool.query("SELECT 1");
-
-    res.json({
-      status: "OK",
-      database: "connected",
-      service: "M-Pesa Auto Bundles"
-    });
-  } catch (error) {
-    console.error("Health check failed:", error.message);
-
-    res.status(503).json({
-      status: "ERROR",
-      database: "unavailable"
-    });
+function getAccountId(req) {
+  if (req.user.role === "admin") {
+    return req.user.adminId;
   }
-});
 
-app.post("/api/admin/login", async (req, res) => {
+  return req.user.resellerId;
+}
+
+async function getAdminByEmail(email) {
+  const result = await pool.query(
+    `SELECT id, email, password_hash, phone
+     FROM admin_users
+     WHERE LOWER(email) = LOWER($1)
+     LIMIT 1`,
+    [String(email || "").trim()]
+  );
+
+  return result.rows[0] || null;
+}
+
+async function getResellerByEmail(email) {
+  const result = await pool.query(
+    `SELECT
+       r.id,
+       r.name,
+       r.email,
+       r.phone,
+       r.status,
+       c.password_hash
+     FROM resellers r
+     JOIN reseller_credentials c
+       ON c.reseller_id = r.id
+     WHERE LOWER(r.email) = LOWER($1)
+     LIMIT 1`,
+    [String(email || "").trim()]
+  );
+
+  return result.rows[0] || null;
+}
+
+async function createAdminFromEnvironment() {
+  const email = String(process.env.ADMIN_EMAIL || "").trim();
+  const password = String(process.env.ADMIN_PASSWORD || "");
+
+  if (!email || !password) {
+    console.log(
+      "Admin bootstrap skipped: ADMIN_EMAIL or ADMIN_PASSWORD is not configured."
+    );
+    return;
+  }
+
+  const existing = await getAdminByEmail(email);
+
+  if (existing) {
+    console.log("Existing database administrator found.");
+    return;
+  }
+
+  const passwordHash = await bcrypt.hash(password, 12);
+
+  await pool.query(
+    `INSERT INTO admin_users (email, password_hash)
+     VALUES ($1, $2)
+     ON CONFLICT (email) DO NOTHING`,
+    [email, passwordHash]
+  );
+
+  console.log("Initial administrator account created.");
+}
+
+const loginAttempts = new Map();
+
+function checkLoginRateLimit(key) {
+  const now = Date.now();
+  const windowMs = 15 * 60 * 1000;
+  const maximumAttempts = 10;
+
+  let record = loginAttempts.get(key);
+
+  if (!record || now - record.startedAt > windowMs) {
+    record = {
+      startedAt: now,
+      count: 0
+    };
+  }
+
+  if (record.count >= maximumAttempts) {
+    loginAttempts.set(key, record);
+    return false;
+  }
+
+  record.count += 1;
+  loginAttempts.set(key, record);
+  return true;
+}
+
+function clearLoginRateLimit(key) {
+  loginAttempts.delete(key);
+}
+
+async function loginAccount(req, res, accountType) {
+  const email = String(req.body.email || "")
+    .trim()
+    .toLowerCase();
+
+  const password = String(req.body.password || "");
+  const ip = String(req.ip || "unknown");
+  const rateKey = accountType + ":" + ip + ":" + email;
+
+  if (!checkLoginRateLimit(rateKey)) {
+    return sendError(
+      res,
+      429,
+      "Too many login attempts. Please try again later."
+    );
+  }
+
+  if (!email || !password) {
+    return sendError(
+      res,
+      400,
+      "Enter your email address and password."
+    );
+  }
+
   try {
-    const phone = normalizePhone(req.body.phone);
-    const password = String(req.body.password || "");
+    let account;
 
-    if (!password) {
-      return sendError(res, 400, "Enter your password.");
+    if (accountType === "admin") {
+      account = await getAdminByEmail(email);
+    } else {
+      account = await getResellerByEmail(email);
     }
 
-    const configuredPhone = process.env.ADMIN_PHONE
-      ? normalizePhone(process.env.ADMIN_PHONE)
-      : null;
-
-    const configuredPassword = process.env.ADMIN_PASSWORD;
+    if (!account) {
+      return sendError(
+        res,
+        401,
+        "Invalid email or password."
+      );
+    }
 
     if (
-      !configuredPhone ||
-      !configuredPassword ||
-      phone !== configuredPhone ||
-      password !== configuredPassword
+      accountType === "reseller" &&
+      account.status !== "active"
     ) {
-      return sendError(res, 401, "Invalid login details.");
+      return sendError(
+        res,
+        403,
+        "Your reseller account is not active."
+      );
     }
 
-    const token = createToken({
-      role: "admin",
-      phone
-    });
+    const validPassword = await bcrypt.compare(
+      password,
+      account.password_hash
+    );
 
-    res.json({
+    if (!validPassword) {
+      return sendError(
+        res,
+        401,
+        "Invalid email or password."
+      );
+    }
+
+    clearLoginRateLimit(rateKey);
+
+    const payload =
+      accountType === "admin"
+        ? {
+            role: "admin",
+            adminId: account.id,
+            email: account.email
+          }
+        : {
+            role: "reseller",
+            resellerId: account.id,
+            email: account.email,
+            name: account.name
+          };
+
+    const token = createToken(payload);
+
+    return res.json({
       status: "SUCCESS",
-      message: "Administrator login successful.",
+      message: "Login successful.",
       token,
-      user: {
-        role: "admin",
-        phone
-      }
+      user: payload
     });
   } catch (error) {
-    console.error("Admin login error:", error.message);
-    return sendError(res, 400, "Unable to complete login.");
+    console.error("Login error:", error.message);
+
+    return sendError(
+      res,
+      500,
+      "Unable to complete login."
+    );
   }
+}
+
+app.post("/api/admin/login", async (req, res) => {
+  return loginAccount(req, res, "admin");
+});
+
+app.post("/api/reseller/login", async (req, res) => {
+  return loginAccount(req, res, "reseller");
 });
 
 app.get(
   "/api/admin/me",
   authenticateToken,
   requireAdmin,
-  (req, res) => {
-    res.json({
-      status: "SUCCESS",
-      user: {
-        role: "admin",
-        phone: req.user.phone
+  async (req, res) => {
+    try {
+      const result = await pool.query(
+        `SELECT id, email, phone, created_at
+         FROM admin_users
+         WHERE id = $1
+         LIMIT 1`,
+        [req.user.adminId]
+      );
+
+      if (!result.rows.length) {
+        return sendError(res, 404, "Admin account not found.");
       }
+
+      return res.json({
+        status: "SUCCESS",
+        user: result.rows[0]
+      });
+    } catch (error) {
+      console.error("Admin profile error:", error.message);
+      return sendError(res, 500, "Unable to load admin profile.");
+    }
+  }
+);
+
+app.get(
+  "/api/reseller/me",
+  authenticateToken,
+  requireReseller,
+  async (req, res) => {
+    try {
+      const result = await pool.query(
+        `SELECT
+           id,
+           name,
+           email,
+           phone,
+           buy_goods_till,
+           till_phone,
+           status,
+           created_at
+         FROM resellers
+         WHERE id = $1
+         LIMIT 1`,
+        [req.user.resellerId]
+      );
+
+      if (!result.rows.length) {
+        return sendError(res, 404, "Reseller account not found.");
+      }
+
+      return res.json({
+        status: "SUCCESS",
+        user: result.rows[0]
+      });
+    } catch (error) {
+      console.error("Reseller profile error:", error.message);
+      return sendError(res, 500, "Unable to load reseller profile.");
+    }
+  }
+);
+
+app.post(
+  "/api/logout",
+  authenticateToken,
+  (req, res) => {
+    return res.json({
+      status: "SUCCESS",
+      message: "Logged out. Remove the saved token from this device."
     });
   }
 );
 
-app.post("/api/resellers/register", async (req, res) => {
-  const client = await pool.connect();
-
-  try {
+app.post(
+  "/api/admin/resellers",
+  authenticateToken,
+  requireAdmin,
+  async (req, res) => {
     const name = String(req.body.name || "").trim();
-    const email = String(req.body.email || "")
-      .trim()
-      .toLowerCase();
-    const phone = normalizePhone(req.body.phone);
-    const buyGoodsTill = String(
-      req.body.buy_goods_till || ""
-    ).replace(/\D/g, "");
-    const tillPhone = normalizePhone(req.body.till_phone);
+    const email = String(req.body.email || "").trim().toLowerCase();
     const password = String(req.body.password || "");
+    const till = String(req.body.buy_goods_till || "").trim();
+    const tillPhoneInput = req.body.till_phone;
+    const phoneInput = req.body.phone;
 
-    if (!name || !email || !buyGoodsTill || !password) {
+    if (!name || !email || !password || !till || !phoneInput || !tillPhoneInput) {
       return sendError(
         res,
         400,
-        "Complete all required registration fields."
+        "Complete all reseller registration fields."
+      );
+    }
+
+    if (password.length < 8) {
+      return sendError(
+        res,
+        400,
+        "The password must contain at least 8 characters."
       );
     }
 
@@ -526,174 +761,84 @@ app.post("/api/resellers/register", async (req, res) => {
       return sendError(res, 400, "Enter a valid email address.");
     }
 
-    if (!/^\d{5,8}$/.test(buyGoodsTill)) {
-      return sendError(res, 400, "Enter a valid Buy Goods Till number.");
-    }
+    let phone;
+    let tillPhone;
 
-    if (password.length < 8) {
-      return sendError(
-        res,
-        400,
-        "Password must contain at least 8 characters."
-      );
-    }
-
-    await client.query("BEGIN");
-
-    const existing = await client.query(
-      `SELECT id
-       FROM resellers
-       WHERE phone = $1
-          OR email = $2
-          OR buy_goods_till = $3
-       LIMIT 1`,
-      [phone, email, buyGoodsTill]
-    );
-
-    if (existing.rows.length > 0) {
-      await client.query("ROLLBACK");
-
-      return sendError(
-        res,
-        409,
-        "An account already uses those registration details."
-      );
-    }
-
-    const passwordHash = await bcrypt.hash(password, 12);
-
-    const inserted = await client.query(
-      `INSERT INTO resellers
-       (name, email, phone, buy_goods_till, till_phone, status)
-       VALUES ($1, $2, $3, $4, $5, 'pending')
-       RETURNING id, name, email, phone, buy_goods_till,
-                 till_phone, status, created_at`,
-      [name, email, phone, buyGoodsTill, tillPhone]
-    );
-
-    const reseller = inserted.rows[0];
-
-    await client.query(
-      `INSERT INTO reseller_credentials
-       (reseller_id, password_hash)
-       VALUES ($1, $2)`,
-      [reseller.id, passwordHash]
-    );
-
-    await client.query(
-      `INSERT INTO token_wallets (reseller_id, balance)
-       VALUES ($1, 0)
-       ON CONFLICT (reseller_id) DO NOTHING`,
-      [reseller.id]
-    );
-
-    await client.query("COMMIT");
-
-    res.status(201).json({
-      status: "SUCCESS",
-      message: "Registration received. Await administrator approval.",
-      reseller
-    });
-  } catch (error) {
-    await client.query("ROLLBACK");
-
-    console.error("Reseller registration error:", error.message);
-
-    sendError(res, 500, "Unable to complete registration.");
-  } finally {
-    client.release();
-  }
-});
-app.post("/api/resellers/login", async (req, res) => {
-  try {
-    const phone = normalizePhone(req.body.phone);
-    const password = String(req.body.password || "");
-
-    if (!password) {
-      return sendError(res, 400, "Enter your password.");
-    }
-
-    const result = await pool.query(
-      `SELECT r.id, r.name, r.email, r.phone,
-              r.buy_goods_till, r.till_phone, r.status,
-              c.password_hash
-       FROM resellers r
-       JOIN reseller_credentials c
-         ON c.reseller_id = r.id
-       WHERE r.phone = $1
-       LIMIT 1`,
-      [phone]
-    );
-
-    if (result.rows.length === 0) {
-      return sendError(res, 401, "Invalid login details.");
-    }
-
-    const reseller = result.rows[0];
-
-    const passwordMatches = await bcrypt.compare(
-      password,
-      reseller.password_hash
-    );
-
-    if (!passwordMatches) {
-      return sendError(res, 401, "Invalid login details.");
-    }
-
-    if (reseller.status !== "active") {
-      return sendError(
-        res,
-        403,
-        "Your account is awaiting administrator approval or is inactive."
-      );
-    }
-
-    const token = createToken({
-      role: "reseller",
-      resellerId: reseller.id,
-      phone: reseller.phone
-    });
-
-    delete reseller.password_hash;
-
-    res.json({
-      status: "SUCCESS",
-      message: "Reseller login successful.",
-      token,
-      user: reseller
-    });
-  } catch (error) {
-    console.error("Reseller login error:", error.message);
-    sendError(res, 400, "Unable to complete login.");
-  }
-});
-
-app.get(
-  "/api/resellers/me",
-  authenticateToken,
-  requireReseller,
-  async (req, res) => {
     try {
-      const result = await pool.query(
-        `SELECT id, name, email, phone, buy_goods_till,
-                till_phone, status, sales_paused, created_at
+      phone = normalizePhone(phoneInput);
+      tillPhone = normalizePhone(tillPhoneInput);
+    } catch (error) {
+      return sendError(res, 400, error.message);
+    }
+
+    const client = await pool.connect();
+
+    try {
+      await client.query("BEGIN");
+
+      const existing = await client.query(
+        `SELECT id
          FROM resellers
-         WHERE id = $1
+         WHERE LOWER(email) = LOWER($1)
+            OR phone = $2
+            OR buy_goods_till = $3
          LIMIT 1`,
-        [req.user.resellerId]
+        [email, phone, till]
       );
 
-      if (result.rows.length === 0) {
-        return sendError(res, 404, "Reseller account not found.");
+      if (existing.rows.length) {
+        await client.query("ROLLBACK");
+        return sendError(
+          res,
+          409,
+          "A reseller with these details already exists."
+        );
       }
 
-      res.json({
+      const resellerResult = await client.query(
+        `INSERT INTO resellers
+          (name, email, phone, buy_goods_till, till_phone, status)
+         VALUES ($1, $2, $3, $4, $5, 'pending')
+         RETURNING id, name, email, phone,
+                   buy_goods_till, till_phone, status, created_at`,
+        [name, email, phone, till, tillPhone]
+      );
+
+      const reseller = resellerResult.rows[0];
+      const passwordHash = await bcrypt.hash(password, 12);
+
+      await client.query(
+        `INSERT INTO reseller_credentials
+          (reseller_id, password_hash)
+         VALUES ($1, $2)`,
+        [reseller.id, passwordHash]
+      );
+
+      await client.query(
+        `INSERT INTO token_wallets (reseller_id, balance)
+         VALUES ($1, 0)
+         ON CONFLICT (reseller_id) DO NOTHING`,
+        [reseller.id]
+      );
+
+      await client.query("COMMIT");
+
+      return res.status(201).json({
         status: "SUCCESS",
-        user: result.rows[0]
+        message: "Reseller created and awaiting approval.",
+        reseller
       });
     } catch (error) {
-      console.error("Reseller profile error:", error.message);
-      sendError(res, 500, "Unable to load reseller profile.");
+      await client.query("ROLLBACK");
+      console.error("Create reseller error:", error.message);
+
+      return sendError(
+        res,
+        500,
+        "Unable to create reseller account."
+      );
+    } finally {
+      client.release();
     }
   }
 );
@@ -705,23 +850,30 @@ app.get(
   async (req, res) => {
     try {
       const result = await pool.query(
-        `SELECT r.id, r.name, r.email, r.phone,
-                r.buy_goods_till, r.till_phone,
-                r.status, r.sales_paused, r.created_at,
-                COALESCE(w.balance, 0) AS token_balance
+        `SELECT
+           r.id,
+           r.name,
+           r.email,
+           r.phone,
+           r.buy_goods_till,
+           r.till_phone,
+           r.status,
+           r.sales_paused,
+           r.created_at,
+           COALESCE(w.balance, 0) AS token_balance
          FROM resellers r
          LEFT JOIN token_wallets w
            ON w.reseller_id = r.id
          ORDER BY r.created_at DESC`
       );
 
-      res.json({
+      return res.json({
         status: "SUCCESS",
         resellers: result.rows
       });
     } catch (error) {
-      console.error("Admin reseller list error:", error.message);
-      sendError(res, 500, "Unable to load reseller accounts.");
+      console.error("List resellers error:", error.message);
+      return sendError(res, 500, "Unable to load resellers.");
     }
   }
 );
@@ -731,41 +883,137 @@ app.patch(
   authenticateToken,
   requireAdmin,
   async (req, res) => {
+    const resellerId = Number(req.params.id);
+    const status = String(req.body.status || "").toLowerCase();
+
+    if (!Number.isSafeInteger(resellerId) || resellerId < 1) {
+      return sendError(res, 400, "Invalid reseller ID.");
+    }
+
+    if (!["active", "pending", "suspended"].includes(status)) {
+      return sendError(res, 400, "Invalid reseller status.");
+    }
+
     try {
-      const resellerId = Number(req.params.id);
-      const status = String(req.body.status || "").toLowerCase();
-
-      if (!Number.isSafeInteger(resellerId) || resellerId < 1) {
-        return sendError(res, 400, "Invalid reseller ID.");
-      }
-
-      if (!["active", "pending", "suspended"].includes(status)) {
-        return sendError(res, 400, "Invalid account status.");
-      }
-
       const result = await pool.query(
         `UPDATE resellers
          SET status = $1
          WHERE id = $2
-         RETURNING id, name, email, phone, status`,
+         RETURNING id, name, email, status`,
         [status, resellerId]
       );
 
-      if (result.rows.length === 0) {
-        return sendError(res, 404, "Reseller account not found.");
+      if (!result.rows.length) {
+        return sendError(res, 404, "Reseller not found.");
       }
 
-      res.json({
+      return res.json({
         status: "SUCCESS",
-        message: "Reseller account status updated.",
+        message: "Reseller status updated.",
         reseller: result.rows[0]
       });
     } catch (error) {
-      console.error("Reseller status update error:", error.message);
-      sendError(res, 500, "Unable to update reseller status.");
+      console.error("Update reseller status error:", error.message);
+      return sendError(
+        res,
+        500,
+        "Unable to update reseller status."
+      );
     }
   }
 );
+
+app.patch(
+  "/api/reseller/profile",
+  authenticateToken,
+  requireReseller,
+  async (req, res) => {
+    const name = String(req.body.name || "").trim();
+    const phoneInput = req.body.phone;
+
+    if (!name || !phoneInput) {
+      return sendError(
+        res,
+        400,
+        "Enter your name and phone number."
+      );
+    }
+
+    let phone;
+
+    try {
+      phone = normalizePhone(phoneInput);
+    } catch (error) {
+      return sendError(res, 400, error.message);
+    }
+
+    try {
+      const result = await pool.query(
+        `UPDATE resellers
+         SET name = $1, phone = $2
+         WHERE id = $3
+         RETURNING id, name, email, phone,
+                   buy_goods_till, till_phone, status`,
+        [name, phone, req.user.resellerId]
+      );
+
+      if (!result.rows.length) {
+        return sendError(res, 404, "Reseller account not found.");
+      }
+
+      return res.json({
+        status: "SUCCESS",
+        message: "Profile updated.",
+        user: result.rows[0]
+      });
+    } catch (error) {
+      console.error("Reseller profile update error:", error.message);
+
+      if (error.code === "23505") {
+        return sendError(
+          res,
+          409,
+          "That phone number is already registered."
+        );
+      }
+
+      return sendError(res, 500, "Unable to update profile.");
+    }
+  }
+);
+         
+async function getCatalogProduct(productId) {
+  const result = await pool.query(
+    `SELECT
+       id,
+       name,
+       price,
+       bingwa_price,
+       safaricom_price,
+       category,
+       validity,
+       ussd_code,
+       menu_keyword,
+       delivery_method,
+       active
+     FROM product_catalog
+     WHERE id = $1
+     LIMIT 1`,
+    [productId]
+  );
+
+  return result.rows[0] || null;
+}
+
+function validateOfferPrice(value) {
+  const price = Number(value);
+
+  if (!Number.isFinite(price) || price <= 0) {
+    return null;
+  }
+
+  return Math.round(price * 100) / 100;
+}
 
 app.get(
   "/api/catalog",
@@ -774,150 +1022,228 @@ app.get(
   async (req, res) => {
     try {
       const result = await pool.query(
-        `SELECT id, name, price, bingwa_price,
-                safaricom_price, category, validity,
-                ussd_code, menu_keyword, delivery_method
+        `SELECT
+           id,
+           name,
+           price,
+           bingwa_price,
+           safaricom_price,
+           category,
+           validity,
+           delivery_method,
+           active
          FROM product_catalog
          WHERE active = TRUE
-         ORDER BY category, price, name`
+         ORDER BY category, name`
       );
 
-      res.json({
+      return res.json({
         status: "SUCCESS",
-        products: result.rows
+        catalog: result.rows
       });
     } catch (error) {
       console.error("Catalogue error:", error.message);
-      sendError(res, 500, "Unable to load product catalogue.");
+      return sendError(res, 500, "Unable to load product catalogue.");
     }
   }
 );
+
 app.post(
-  "/api/offers",
+  "/api/admin/catalog",
   authenticateToken,
-  requireAdminOrReseller,
+  requireAdmin,
   async (req, res) => {
-    const client = await pool.connect();
+    const name = String(req.body.name || "").trim();
+    const category = String(req.body.category || "").trim();
+    const validity = String(req.body.validity || "").trim();
+    const deliveryMethod = String(
+      req.body.delivery_method || ""
+    ).trim();
+    const ussdCode = String(req.body.ussd_code || "").trim();
+    const menuKeyword = String(req.body.menu_keyword || "").trim();
+
+    const price = validateOfferPrice(req.body.price);
+    const bingwaPrice =
+      req.body.bingwa_price == null
+        ? null
+        : validateOfferPrice(req.body.bingwa_price);
+    const safaricomPrice =
+      req.body.safaricom_price == null
+        ? null
+        : validateOfferPrice(req.body.safaricom_price);
+
+    if (
+      !name ||
+      !category ||
+      !validity ||
+      !deliveryMethod ||
+      !price
+    ) {
+      return sendError(
+        res,
+        400,
+        "Enter the product name, category, validity, delivery method and valid price."
+      );
+    }
+
+    if (!["ussd", "api", "manual"].includes(deliveryMethod)) {
+      return sendError(
+        res,
+        400,
+        "Delivery method must be ussd, api or manual."
+      );
+    }
+
+    if (deliveryMethod === "ussd" && !ussdCode) {
+      return sendError(
+        res,
+        400,
+        "A USSD code is required for USSD delivery."
+      );
+    }
+
+    if (
+      (req.body.bingwa_price != null && !bingwaPrice) ||
+      (req.body.safaricom_price != null && !safaricomPrice)
+    ) {
+      return sendError(res, 400, "Enter valid supplier prices.");
+    }
 
     try {
-      const name = String(req.body.name || "").trim();
-      const price = Number(req.body.price);
-      const catalogProductId = Number(req.body.catalog_product_id);
-
-      const resellerId =
-        req.user.role === "reseller"
-          ? req.user.resellerId
-          : null;
-
-      if (
-        !name ||
-        !Number.isSafeInteger(catalogProductId) ||
-        catalogProductId < 1 ||
-        !Number.isFinite(price) ||
-        price <= 0
-      ) {
-        return sendError(
-          res,
-          400,
-          "Enter a valid offer name, catalogue product and price."
-        );
-      }
-
-      const productResult = await client.query(
-        `SELECT *
-         FROM product_catalog
-         WHERE id = $1 AND active = TRUE
-         LIMIT 1`,
-        [catalogProductId]
-      );
-
-      if (productResult.rows.length === 0) {
-        return sendError(
-          res,
-          400,
-          "Select an active product from the approved catalogue."
-        );
-      }
-
-      const product = productResult.rows[0];
-
-      const approvalStatus =
-        req.user.role === "admin" ? "approved" : "pending";
-
-      const active = req.user.role === "admin";
-
-      await client.query("BEGIN");
-      await lockOfferPrices(client);
-
-      if (
-        active &&
-        await hasDuplicateActivePrice(
-          client,
-          price,
-          resellerId
-        )
-      ) {
-        await client.query("ROLLBACK");
-
-        return sendError(
-          res,
-          409,
-          "This business already has an active offer at that price."
-        );
-      }
-
-      const inserted = await client.query(
-        `INSERT INTO offers (
-          reseller_id,
-          catalog_product_id,
-          name,
-          price,
-          approval_status,
-          bingwa_price,
-          safaricom_price,
-          ussd_code,
-          menu_keyword,
-          category,
-          delivery_method,
-          active
-        )
-        VALUES (
-          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12
-        )
-        RETURNING *`,
+      const result = await pool.query(
+        `INSERT INTO product_catalog
+          (
+            name,
+            price,
+            bingwa_price,
+            safaricom_price,
+            category,
+            validity,
+            ussd_code,
+            menu_keyword,
+            delivery_method,
+            active
+          )
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,TRUE)
+         RETURNING *`,
         [
-          resellerId,
-          product.id,
           name,
           price,
-          approvalStatus,
-          product.bingwa_price,
-          product.safaricom_price,
-          product.ussd_code,
-          product.menu_keyword,
-          product.category,
-          product.delivery_method,
-          active
+          bingwaPrice,
+          safaricomPrice,
+          category,
+          validity,
+          ussdCode || null,
+          menuKeyword || null,
+          deliveryMethod
         ]
       );
 
-      await client.query("COMMIT");
-
-      res.status(201).json({
+      return res.status(201).json({
         status: "SUCCESS",
-        message: active
-          ? "Administrator offer created."
-          : "Offer submitted for administrator approval.",
-        offer: inserted.rows[0]
+        message: "Catalogue product created.",
+        product: result.rows[0]
       });
     } catch (error) {
-      await client.query("ROLLBACK");
+      console.error("Create catalogue product error:", error.message);
+      return sendError(
+        res,
+        500,
+        "Unable to create catalogue product."
+      );
+    }
+  }
+);
 
-      console.error("Offer creation error:", error.message);
+app.patch(
+  "/api/admin/catalog/:id",
+  authenticateToken,
+  requireAdmin,
+  async (req, res) => {
+    const productId = Number(req.params.id);
 
-      sendError(res, 500, "Unable to create offer.");
-    } finally {
-      client.release();
+    if (!Number.isSafeInteger(productId) || productId < 1) {
+      return sendError(res, 400, "Invalid product ID.");
+    }
+
+    const fields = {
+      name: "name",
+      price: "price",
+      bingwa_price: "bingwa_price",
+      safaricom_price: "safaricom_price",
+      category: "category",
+      validity: "validity",
+      ussd_code: "ussd_code",
+      menu_keyword: "menu_keyword",
+      delivery_method: "delivery_method",
+      active: "active"
+    };
+
+    const updates = [];
+    const values = [];
+    let position = 1;
+
+    for (const [field, column] of Object.entries(fields)) {
+      if (req.body[field] === undefined) {
+        continue;
+      }
+
+      let value = req.body[field];
+
+      if (
+        ["price", "bingwa_price", "safaricom_price"].includes(field) &&
+        value !== null
+      ) {
+        value = validateOfferPrice(value);
+
+        if (!value) {
+          return sendError(res, 400, "Invalid product price.");
+        }
+      }
+
+      if (field === "active" && typeof value !== "boolean") {
+        return sendError(res, 400, "Active must be true or false.");
+      }
+
+      if (typeof value === "string") {
+        value = value.trim();
+      }
+
+      updates.push(`${column} = $${position++}`);
+      values.push(value);
+    }
+
+    if (!updates.length) {
+      return sendError(res, 400, "No valid changes supplied.");
+    }
+
+    values.push(productId);
+
+    try {
+      const result = await pool.query(
+        `UPDATE product_catalog
+         SET ${updates.join(", ")}
+         WHERE id = $${position}
+         RETURNING *`,
+        values
+      );
+
+      if (!result.rows.length) {
+        return sendError(res, 404, "Catalogue product not found.");
+      }
+
+      return res.json({
+        status: "SUCCESS",
+        message: "Catalogue product updated.",
+        product: result.rows[0]
+      });
+    } catch (error) {
+      console.error("Update catalogue error:", error.message);
+      return sendError(
+        res,
+        500,
+        "Unable to update catalogue product."
+      );
     }
   }
 );
@@ -932,341 +1258,296 @@ app.get(
 
       if (req.user.role === "admin") {
         result = await pool.query(
-          `SELECT o.*, r.name AS reseller_name
+          `SELECT
+             o.*,
+             r.name AS reseller_name,
+             p.validity,
+             p.category AS catalog_category
            FROM offers o
-           LEFT JOIN resellers r ON r.id = o.reseller_id
+           LEFT JOIN resellers r
+             ON r.id = o.reseller_id
+           LEFT JOIN product_catalog p
+             ON p.id = o.catalog_product_id
            ORDER BY o.created_at DESC`
         );
       } else {
         result = await pool.query(
-          `SELECT o.*, r.name AS reseller_name
+          `SELECT
+             o.*,
+             p.validity,
+             p.category AS catalog_category
            FROM offers o
-           LEFT JOIN resellers r ON r.id = o.reseller_id
-           WHERE o.reseller_id = $1
-              OR o.reseller_id IS NULL
+           LEFT JOIN product_catalog p
+             ON p.id = o.catalog_product_id
+           WHERE
+             (
+               o.reseller_id = $1
+               OR (
+                 o.reseller_id IS NULL
+                 AND o.approval_status = 'approved'
+                 AND o.active = TRUE
+               )
+             )
            ORDER BY o.created_at DESC`,
           [req.user.resellerId]
         );
       }
 
-      res.json({
+      return res.json({
         status: "SUCCESS",
         offers: result.rows
       });
     } catch (error) {
-      console.error("Offer listing error:", error.message);
-      sendError(res, 500, "Unable to load offers.");
+      console.error("Load offers error:", error.message);
+      return sendError(res, 500, "Unable to load offers.");
     }
   }
 );
 
-app.get(
-  "/api/offers/:id",
+app.post(
+  "/api/offers",
   authenticateToken,
   requireAdminOrReseller,
   async (req, res) => {
-    try {
-      const offerId = Number(req.params.id);
+    const productId = Number(req.body.catalog_product_id);
+    const price = validateOfferPrice(req.body.price);
 
-      if (!Number.isSafeInteger(offerId) || offerId < 1) {
-        return sendError(res, 400, "Invalid offer ID.");
+    if (
+      !Number.isSafeInteger(productId) ||
+      productId < 1 ||
+      !price
+    ) {
+      return sendError(
+        res,
+        400,
+        "Select a catalogue product and enter a valid selling price."
+      );
+    }
+
+    const client = await pool.connect();
+
+    try {
+      await client.query("BEGIN");
+
+      const productResult = await client.query(
+        `SELECT *
+         FROM product_catalog
+         WHERE id = $1 AND active = TRUE
+         FOR SHARE`,
+        [productId]
+      );
+
+      if (!productResult.rows.length) {
+        await client.query("ROLLBACK");
+        return sendError(
+          res,
+          400,
+          "The selected catalogue product is not active."
+        );
       }
 
-      const result = await pool.query(
-        `SELECT *
-         FROM offers
-         WHERE id = $1
-           AND (
-             $2::TEXT = 'admin'
-             OR reseller_id = $3
-             OR reseller_id IS NULL
-           )
-         LIMIT 1`,
+      const product = productResult.rows[0];
+
+      if (
+        !product.delivery_method ||
+        (
+          product.delivery_method === "ussd" &&
+          !product.ussd_code
+        )
+      ) {
+        await client.query("ROLLBACK");
+        return sendError(
+          res,
+          400,
+          "This product does not have a complete delivery configuration."
+        );
+      }
+
+      const resellerId =
+        req.user.role === "reseller"
+          ? req.user.resellerId
+          : null;
+
+      const approvalStatus =
+        req.user.role === "admin"
+          ? "approved"
+          : "pending";
+
+      const active = false;
+
+      const result = await client.query(
+        `INSERT INTO offers
+          (
+            reseller_id,
+            catalog_product_id,
+            name,
+            price,
+            approval_status,
+            ussd_code,
+            menu_keyword,
+            category,
+            delivery_method,
+            active
+          )
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+         RETURNING *`,
         [
-          offerId,
-          req.user.role,
-          req.user.resellerId || null
+          resellerId,
+          product.id,
+          product.name,
+          price,
+          approvalStatus,
+          product.ussd_code,
+          product.menu_keyword,
+          product.category,
+          product.delivery_method,
+          active
         ]
       );
 
-      if (result.rows.length === 0) {
-        return sendError(res, 404, "Offer not found.");
-      }
+      await client.query("COMMIT");
 
-      res.json({
+      return res.status(201).json({
         status: "SUCCESS",
+        message:
+          req.user.role === "reseller"
+            ? "Offer submitted for administrator approval."
+            : "Admin offer created. Activate it when ready.",
         offer: result.rows[0]
       });
     } catch (error) {
-      console.error("Offer detail error:", error.message);
-      sendError(res, 500, "Unable to load offer.");
+      await client.query("ROLLBACK");
+      console.error("Create offer error:", error.message);
+
+      return sendError(res, 500, "Unable to create offer.");
+    } finally {
+      client.release();
     }
   }
 );
+         
 app.patch(
   "/api/admin/offers/:id/approval",
   authenticateToken,
   requireAdmin,
   async (req, res) => {
-    const client = await pool.connect();
+    const offerId = Number(req.params.id);
+    const approvalStatus = String(
+      req.body.approval_status || req.body.status || ""
+    ).toLowerCase();
+
+    if (!Number.isSafeInteger(offerId) || offerId < 1) {
+      return sendError(res, 400, "Invalid offer ID.");
+    }
+
+    if (!["approved", "rejected", "pending"].includes(approvalStatus)) {
+      return sendError(res, 400, "Invalid approval status.");
+    }
 
     try {
-      const offerId = Number(req.params.id);
-      const approvalStatus = String(
-        req.body.approval_status || ""
-      ).toLowerCase();
-
-      if (!Number.isSafeInteger(offerId) || offerId < 1) {
-        return sendError(res, 400, "Invalid offer ID.");
-      }
-
-      if (!["approved", "rejected"].includes(approvalStatus)) {
-        return sendError(
-          res,
-          400,
-          "Choose approved or rejected."
-        );
-      }
-
-      await client.query("BEGIN");
-
-      const offerResult = await client.query(
-        `SELECT *
-         FROM offers
-         WHERE id = $1
-         FOR UPDATE`,
-        [offerId]
+      const result = await pool.query(
+        `UPDATE offers
+         SET approval_status = $1,
+             active = CASE
+               WHEN $1 = 'approved' THEN active
+               ELSE FALSE
+             END
+         WHERE id = $2
+         RETURNING *`,
+        [approvalStatus, offerId]
       );
 
-      if (offerResult.rows.length === 0) {
-        await client.query("ROLLBACK");
+      if (!result.rows.length) {
         return sendError(res, 404, "Offer not found.");
       }
 
-      const offer = offerResult.rows[0];
-
-      if (approvalStatus === "approved") {
-        if (!offer.catalog_product_id) {
-          await client.query("ROLLBACK");
-
-          return sendError(
-            res,
-            400,
-            "This offer is not linked to a catalogue product."
-          );
-        }
-
-        const productResult = await client.query(
-          `SELECT id
-           FROM product_catalog
-           WHERE id = $1
-             AND active = TRUE
-           LIMIT 1`,
-          [offer.catalog_product_id]
-        );
-
-        if (productResult.rows.length === 0) {
-          await client.query("ROLLBACK");
-
-          return sendError(
-            res,
-            400,
-            "The linked catalogue product is not active."
-          );
-        }
-
-        await lockOfferPrices(client);
-
-        const duplicate = await hasDuplicateActivePrice(
-          client,
-          offer.price,
-          offer.reseller_id,
-          offerId
-        );
-
-        if (duplicate) {
-          await client.query("ROLLBACK");
-
-          return sendError(
-            res,
-            409,
-            "That business already has another active offer at this price."
-          );
-        }
-      }
-
-      const active = approvalStatus === "approved";
-
-      const updated = await client.query(
-        `UPDATE offers
-         SET approval_status = $1,
-             active = $2
-         WHERE id = $3
-         RETURNING *`,
-        [approvalStatus, active, offerId]
-      );
-
-      await client.query("COMMIT");
-
-      res.json({
+      return res.json({
         status: "SUCCESS",
-        message:
-          approvalStatus === "approved"
-            ? "Offer approved and activated."
-            : "Offer rejected and deactivated.",
-        offer: updated.rows[0]
+        message: "Offer approval status updated.",
+        offer: result.rows[0]
       });
     } catch (error) {
-      await client.query("ROLLBACK");
-
-      console.error(
-        "Offer approval error:",
-        error.message
-      );
-
-      sendError(res, 500, "Unable to update offer approval.");
-    } finally {
-      client.release();
+      console.error("Offer approval error:", error.message);
+      return sendError(res, 500, "Unable to update offer approval.");
     }
   }
 );
+
 app.patch(
   "/api/admin/offers/:id",
   authenticateToken,
   requireAdmin,
   async (req, res) => {
-    const client = await pool.connect();
+    const offerId = Number(req.params.id);
+
+    if (!Number.isSafeInteger(offerId) || offerId < 1) {
+      return sendError(res, 400, "Invalid offer ID.");
+    }
+
+    const updates = [];
+    const values = [];
+    let position = 1;
+
+    if (req.body.name !== undefined) {
+      const name = String(req.body.name || "").trim();
+
+      if (!name) {
+        return sendError(res, 400, "Offer name cannot be empty.");
+      }
+
+      updates.push(`name = $${position++}`);
+      values.push(name);
+    }
+
+    if (req.body.price !== undefined) {
+      const price = validateOfferPrice(req.body.price);
+
+      if (!price) {
+        return sendError(res, 400, "Enter a valid offer price.");
+      }
+
+      updates.push(`price = $${position++}`);
+      values.push(price);
+    }
+
+    if (req.body.commission_per_sale !== undefined) {
+      const commission = Number(req.body.commission_per_sale);
+
+      if (!Number.isFinite(commission) || commission < 0) {
+        return sendError(res, 400, "Invalid commission amount.");
+      }
+
+      updates.push(`commission_per_sale = $${position++}`);
+      values.push(Math.round(commission * 100) / 100);
+    }
+
+    if (!updates.length) {
+      return sendError(res, 400, "No supported changes supplied.");
+    }
+
+    values.push(offerId);
 
     try {
-      const offerId = Number(req.params.id);
-
-      if (!Number.isSafeInteger(offerId) || offerId < 1) {
-        return sendError(res, 400, "Invalid offer ID.");
-      }
-
-      const name = String(req.body.name || "").trim();
-      const price = Number(req.body.price);
-      const catalogProductId = Number(
-        req.body.catalog_product_id
+      const result = await pool.query(
+        `UPDATE offers
+         SET ${updates.join(", ")}
+         WHERE id = $${position}
+         RETURNING *`,
+        values
       );
 
-      if (
-        !name ||
-        !Number.isFinite(price) ||
-        price <= 0 ||
-        !Number.isSafeInteger(catalogProductId) ||
-        catalogProductId < 1
-      ) {
-        return sendError(
-          res,
-          400,
-          "Enter a valid offer name, price and catalogue product."
-        );
-      }
-
-      await client.query("BEGIN");
-
-      const existing = await client.query(
-        `SELECT *
-         FROM offers
-         WHERE id = $1
-         FOR UPDATE`,
-        [offerId]
-      );
-
-      if (existing.rows.length === 0) {
-        await client.query("ROLLBACK");
+      if (!result.rows.length) {
         return sendError(res, 404, "Offer not found.");
       }
 
-      const productResult = await client.query(
-        `SELECT *
-         FROM product_catalog
-         WHERE id = $1
-           AND active = TRUE
-         LIMIT 1`,
-        [catalogProductId]
-      );
-
-      if (productResult.rows.length === 0) {
-        await client.query("ROLLBACK");
-
-        return sendError(
-          res,
-          400,
-          "Select an active catalogue product."
-        );
-      }
-
-      const product = productResult.rows[0];
-      const oldOffer = existing.rows[0];
-
-      if (
-        oldOffer.active &&
-        oldOffer.approval_status === "approved"
-      ) {
-        await lockOfferPrices(client);
-
-        const duplicate = await hasDuplicateActivePrice(
-          client,
-          price,
-          oldOffer.reseller_id,
-          offerId
-        );
-
-        if (duplicate) {
-          await client.query("ROLLBACK");
-
-          return sendError(
-            res,
-            409,
-            "This business already has an active offer at that price."
-          );
-        }
-      }
-
-      const updated = await client.query(
-        `UPDATE offers
-         SET name = $1,
-             price = $2,
-             catalog_product_id = $3,
-             bingwa_price = $4,
-             safaricom_price = $5,
-             ussd_code = $6,
-             menu_keyword = $7,
-             category = $8,
-             delivery_method = $9
-         WHERE id = $10
-         RETURNING *`,
-        [
-          name,
-          price,
-          product.id,
-          product.bingwa_price,
-          product.safaricom_price,
-          product.ussd_code,
-          product.menu_keyword,
-          product.category,
-          product.delivery_method,
-          offerId
-        ]
-      );
-
-      await client.query("COMMIT");
-
-      res.json({
+      return res.json({
         status: "SUCCESS",
-        message: "Offer details updated.",
-        offer: updated.rows[0]
+        message: "Offer updated.",
+        offer: result.rows[0]
       });
     } catch (error) {
-      await client.query("ROLLBACK");
-
-      console.error("Offer edit error:", error.message);
-
-      sendError(res, 500, "Unable to update offer.");
-    } finally {
-      client.release();
+      console.error("Admin offer update error:", error.message);
+      return sendError(res, 500, "Unable to update offer.");
     }
   }
 );
@@ -1276,1603 +1557,609 @@ app.patch(
   authenticateToken,
   requireAdmin,
   async (req, res) => {
-    const client = await pool.connect();
+    const offerId = Number(req.params.id);
+
+    if (!Number.isSafeInteger(offerId) || offerId < 1) {
+      return sendError(res, 400, "Invalid offer ID.");
+    }
+
+    if (typeof req.body.active !== "boolean") {
+      return sendError(res, 400, "Active must be true or false.");
+    }
 
     try {
-      const offerId = Number(req.params.id);
-      const active = req.body.active === true;
-
-      if (!Number.isSafeInteger(offerId) || offerId < 1) {
-        return sendError(res, 400, "Invalid offer ID.");
-      }
-
-      await client.query("BEGIN");
-
-      const existing = await client.query(
-        `SELECT *
-         FROM offers
-         WHERE id = $1
-         FOR UPDATE`,
-        [offerId]
-      );
-
-      if (existing.rows.length === 0) {
-        await client.query("ROLLBACK");
-        return sendError(res, 404, "Offer not found.");
-      }
-
-      const offer = existing.rows[0];
-
-      if (active) {
-        if (offer.approval_status !== "approved") {
-          await client.query("ROLLBACK");
-
-          return sendError(
-            res,
-            400,
-            "Only approved offers can be activated."
-          );
-        }
-
-        await lockOfferPrices(client);
-
-        const duplicate = await hasDuplicateActivePrice(
-          client,
-          offer.price,
-          offer.reseller_id,
-          offerId
-        );
-
-        if (duplicate) {
-          await client.query("ROLLBACK");
-
-          return sendError(
-            res,
-            409,
-            "This business already has an active offer at that price."
-          );
-        }
-      }
-
-      const updated = await client.query(
-        `UPDATE offers
+      const result = await pool.query(
+        `UPDATE offers o
          SET active = $1
-         WHERE id = $2
+         WHERE o.id = $2
+           AND (
+             $1 = FALSE
+             OR (
+               o.approval_status = 'approved'
+               AND EXISTS (
+                 SELECT 1
+                 FROM product_catalog p
+                 WHERE p.id = o.catalog_product_id
+                   AND p.active = TRUE
+                   AND p.delivery_method IS NOT NULL
+                   AND (
+                     p.delivery_method <> 'ussd'
+                     OR NULLIF(p.ussd_code, '') IS NOT NULL
+                   )
+               )
+             )
+           )
          RETURNING *`,
-        [active, offerId]
+        [req.body.active, offerId]
       );
 
-      await client.query("COMMIT");
+      if (!result.rows.length) {
+        return sendError(
+          res,
+          400,
+          "Offer not found, not approved, or missing an active delivery configuration."
+        );
+      }
 
-      res.json({
+      return res.json({
         status: "SUCCESS",
-        message: active
+        message: req.body.active
           ? "Offer activated."
           : "Offer deactivated.",
-        offer: updated.rows[0]
+        offer: result.rows[0]
       });
     } catch (error) {
-      await client.query("ROLLBACK");
-
       console.error("Offer activation error:", error.message);
-
-      sendError(res, 500, "Unable to update offer status.");
-    } finally {
-      client.release();
+      return sendError(res, 500, "Unable to change offer activation.");
     }
   }
 );
 
-app.delete(
+app.patch(
+  "/api/reseller/offers/:id",
+  authenticateToken,
+  requireReseller,
+  async (req, res) => {
+    const offerId = Number(req.params.id);
+
+    if (!Number.isSafeInteger(offerId) || offerId < 1) {
+      return sendError(res, 400, "Invalid offer ID.");
+    }
+
+    const updates = [];
+    const values = [];
+    let position = 1;
+
+    if (req.body.name !== undefined) {
+      const name = String(req.body.name || "").trim();
+
+      if (!name) {
+        return sendError(res, 400, "Offer name cannot be empty.");
+      }
+
+      updates.push(`name = $${position++}`);
+      values.push(name);
+    }
+
+    if (req.body.price !== undefined) {
+      const price = validateOfferPrice(req.body.price);
+
+      if (!price) {
+        return sendError(res, 400, "Enter a valid offer price.");
+      }
+
+      updates.push(`price = $${position++}`);
+      values.push(price);
+    }
+
+    if (!updates.length) {
+      return sendError(res, 400, "No supported changes supplied.");
+    }
+
+    updates.push("approval_status = 'pending'");
+    updates.push("active = FALSE");
+
+    values.push(offerId, req.user.resellerId);
+
+    try {
+      const result = await pool.query(
+        `UPDATE offers
+         SET ${updates.join(", ")}
+         WHERE id = $${position}
+           AND reseller_id = $${position + 1}
+         RETURNING *`,
+        values
+      );
+
+      if (!result.rows.length) {
+        return sendError(
+          res,
+          404,
+          "Your offer was not found."
+        );
+      }
+
+      return res.json({
+        status: "SUCCESS",
+        message: "Offer updated and submitted for approval.",
+        offer: result.rows[0]
+      });
+    } catch (error) {
+      console.error("Reseller offer update error:", error.message);
+      return sendError(res, 500, "Unable to update your offer.");
+    }
+  }
+);
+
+app.patch(
+  "/api/reseller/offers/:id/active",
+  authenticateToken,
+  requireReseller,
+  async (req, res) => {
+    const offerId = Number(req.params.id);
+
+    if (!Number.isSafeInteger(offerId) || offerId < 1) {
+      return sendError(res, 400, "Invalid offer ID.");
+    }
+
+    if (typeof req.body.active !== "boolean") {
+      return sendError(res, 400, "Active must be true or false.");
+    }
+
+    try {
+      const result = await pool.query(
+        `UPDATE offers o
+         SET active = $1
+         WHERE o.id = $2
+           AND o.reseller_id = $3
+           AND (
+             $1 = FALSE
+             OR (
+               o.approval_status = 'approved'
+               AND EXISTS (
+                 SELECT 1
+                 FROM product_catalog p
+                 WHERE p.id = o.catalog_product_id
+                   AND p.active = TRUE
+                   AND p.delivery_method IS NOT NULL
+                   AND (
+                     p.delivery_method <> 'ussd'
+                     OR NULLIF(p.ussd_code, '') IS NOT NULL
+                   )
+               )
+             )
+           )
+         RETURNING *`,
+        [
+          req.body.active,
+          offerId,
+          req.user.resellerId
+        ]
+      );
+
+      if (!result.rows.length) {
+        return sendError(
+          res,
+          400,
+          "Your offer was not found, approved, or ready for delivery."
+        );
+      }
+
+      return res.json({
+        status: "SUCCESS",
+        message: req.body.active
+          ? "Your offer is active."
+          : "Your offer is inactive.",
+        offer: result.rows[0]
+      });
+    } catch (error) {
+      console.error("Reseller offer activation error:", error.message);
+      return sendError(res, 500, "Unable to change your offer.");
+    }
+  }
+);
+
+app.patch(
+  "/api/reseller/sales-status",
+  authenticateToken,
+  requireReseller,
+  async (req, res) => {
+    if (typeof req.body.paused !== "boolean") {
+      return sendError(res, 400, "Paused must be true or false.");
+    }
+
+    try {
+      const result = await pool.query(
+        `UPDATE resellers
+         SET sales_paused = $1
+         WHERE id = $2
+         RETURNING id, sales_paused`,
+        [req.body.paused, req.user.resellerId]
+      );
+
+      if (!result.rows.length) {
+        return sendError(res, 404, "Reseller account not found.");
+      }
+
+      return res.json({
+        status: "SUCCESS",
+        message: req.body.paused
+          ? "Your sales are paused."
+          : "Your sales are resumed.",
+        sales_paused: result.rows[0].sales_paused
+      });
+    } catch (error) {
+      console.error("Reseller sales pause error:", error.message);
+      return sendError(res, 500, "Unable to update sales status.");
+    }
+  }
+);
+
+app.patch(
+  "/api/admin/offers/:id/approval",
+  authenticateToken,
+  requireAdmin,
+  async (req, res) => {
+    const offerId = Number(req.params.id);
+    const approvalStatus = String(
+      req.body.approval_status || req.body.status || ""
+    ).toLowerCase();
+
+    if (!Number.isSafeInteger(offerId) || offerId < 1) {
+      return sendError(res, 400, "Invalid offer ID.");
+    }
+
+    if (!["approved", "rejected", "pending"].includes(approvalStatus)) {
+      return sendError(res, 400, "Invalid approval status.");
+    }
+
+    try {
+      const result = await pool.query(
+        `UPDATE offers
+         SET approval_status = $1,
+             active = CASE
+               WHEN $1 = 'approved' THEN active
+               ELSE FALSE
+             END
+         WHERE id = $2
+         RETURNING *`,
+        [approvalStatus, offerId]
+      );
+
+      if (!result.rows.length) {
+        return sendError(res, 404, "Offer not found.");
+      }
+
+      return res.json({
+        status: "SUCCESS",
+        message: "Offer approval status updated.",
+        offer: result.rows[0]
+      });
+    } catch (error) {
+      console.error("Offer approval error:", error.message);
+      return sendError(res, 500, "Unable to update offer approval.");
+    }
+  }
+);
+
+app.patch(
   "/api/admin/offers/:id",
   authenticateToken,
   requireAdmin,
   async (req, res) => {
-    try {
-      const offerId = Number(req.params.id);
+    const offerId = Number(req.params.id);
 
-      if (!Number.isSafeInteger(offerId) || offerId < 1) {
-        return sendError(res, 400, "Invalid offer ID.");
+    if (!Number.isSafeInteger(offerId) || offerId < 1) {
+      return sendError(res, 400, "Invalid offer ID.");
+    }
+
+    const updates = [];
+    const values = [];
+    let position = 1;
+
+    if (req.body.name !== undefined) {
+      const name = String(req.body.name || "").trim();
+
+      if (!name) {
+        return sendError(res, 400, "Offer name cannot be empty.");
       }
 
+      updates.push(`name = $${position++}`);
+      values.push(name);
+    }
+
+    if (req.body.price !== undefined) {
+      const price = validateOfferPrice(req.body.price);
+
+      if (!price) {
+        return sendError(res, 400, "Enter a valid offer price.");
+      }
+
+      updates.push(`price = $${position++}`);
+      values.push(price);
+    }
+
+    if (req.body.commission_per_sale !== undefined) {
+      const commission = Number(req.body.commission_per_sale);
+
+      if (!Number.isFinite(commission) || commission < 0) {
+        return sendError(res, 400, "Invalid commission amount.");
+      }
+
+      updates.push(`commission_per_sale = $${position++}`);
+      values.push(Math.round(commission * 100) / 100);
+    }
+
+    if (!updates.length) {
+      return sendError(res, 400, "No supported changes supplied.");
+    }
+
+    values.push(offerId);
+
+    try {
       const result = await pool.query(
-        `DELETE FROM offers
-         WHERE id = $1
-         RETURNING id, name`,
-        [offerId]
+        `UPDATE offers
+         SET ${updates.join(", ")}
+         WHERE id = $${position}
+         RETURNING *`,
+        values
       );
 
-      if (result.rows.length === 0) {
+      if (!result.rows.length) {
         return sendError(res, 404, "Offer not found.");
       }
 
-      res.json({
+      return res.json({
         status: "SUCCESS",
-        message: "Offer deleted.",
+        message: "Offer updated.",
         offer: result.rows[0]
       });
     } catch (error) {
-      console.error("Offer deletion error:", error.message);
-      sendError(res, 500, "Unable to delete offer.");
+      console.error("Admin offer update error:", error.message);
+      return sendError(res, 500, "Unable to update offer.");
     }
   }
 );
-app.post("/api/mpesa/c2b/validation", async (req, res) => {
-  try {
-    res.json({
-      ResultCode: 0,
-      ResultDesc: "Accepted"
-    });
-  } catch (error) {
-    console.error("M-Pesa validation error:", error.message);
-
-    res.status(500).json({
-      ResultCode: 1,
-      ResultDesc: "Validation failed"
-    });
-  }
-});
-
-app.post("/api/mpesa/c2b/confirmation", async (req, res) => {
-  const client = await pool.connect();
-
-  try {
-    const body = req.body || {};
-
-    const receipt = String(body.TransID || "").trim();
-    const amount = Number(body.TransAmount);
-    const payerPhone = normalizePhone(body.MSISDN);
-
-    const businessTill = String(
-      body.BusinessShortCode || ""
-    ).replace(/\D/g, "");
-
-    if (
-      !receipt ||
-      !businessTill ||
-      !Number.isFinite(amount) ||
-      amount <= 0
-    ) {
-      return res.status(400).json({
-        ResultCode: 1,
-        ResultDesc: "Invalid payment information"
-      });
-    }
-
-    await client.query("BEGIN");
-
-    const eventResult = await client.query(
-      `INSERT INTO mpesa_callback_events (
-        trans_id,
-        business_short_code,
-        trans_amount,
-        msisdn,
-        raw_payload,
-        processing_status
-      )
-      VALUES ($1, $2, $3, $4, $5, 'received')
-      ON CONFLICT (trans_id) DO NOTHING
-      RETURNING id`,
-      [
-        receipt,
-        businessTill,
-        amount,
-        payerPhone,
-        JSON.stringify(body)
-      ]
-    );
-
-    if (eventResult.rows.length === 0) {
-      await client.query("COMMIT");
-
-      return res.json({
-        ResultCode: 0,
-        ResultDesc: "Payment already received"
-      });
-    }
-
-    await client.query(
-      `INSERT INTO payments (
-        receipt_number,
-        business_till,
-        payer_phone,
-        amount,
-        status
-      )
-      VALUES ($1, $2, $3, $4, 'received')
-      ON CONFLICT (receipt_number) DO NOTHING`,
-      [receipt, businessTill, payerPhone, amount]
-    );
-
-    const platformResult = await client.query(
-      `SELECT admin_buy_goods_till, sales_paused
-       FROM platform_settings
-       WHERE id = 1
-       LIMIT 1`
-    );
-
-    const platformSettings = platformResult.rows[0] || {};
-
-    const globalPaused = await getSalesPaused(pool);
-
-    if (globalPaused) {
-      await client.query(
-        `UPDATE mpesa_callback_events
-         SET processing_status = 'paused',
-             processing_note = 'Platform sales are paused'
-         WHERE trans_id = $1`,
-        [receipt]
-      );
-
-      await client.query("COMMIT");
-
-      return res.json({
-        ResultCode: 0,
-        ResultDesc: "Payment recorded"
-      });
-    }
-
-    const matchingBusinesses = [];
-
-    const adminTill = String(
-      platformSettings.admin_buy_goods_till || ""
-    ).replace(/\D/g, "");
-
-    if (adminTill && adminTill === businessTill) {
-      const adminOffers = await client.query(
-        `SELECT id, reseller_id, name, price
-         FROM offers
-         WHERE reseller_id IS NULL
-           AND active = TRUE
-           AND approval_status = 'approved'
-           AND price = $1`,
-        [amount]
-      );
-
-      for (const offer of adminOffers.rows) {
-        matchingBusinesses.push({
-          resellerId: null,
-          offer
-        });
-      }
-    }
-
-    const resellerOffers = await client.query(
-      `SELECT
-         r.id AS reseller_id,
-         r.status AS reseller_status,
-         r.sales_paused,
-         o.id AS offer_id,
-         o.name AS offer_name,
-         o.price AS offer_price
-       FROM resellers r
-       JOIN offers o
-         ON o.reseller_id = r.id
-       WHERE regexp_replace(r.buy_goods_till, '[^0-9]', '', 'g') = $1
-         AND r.status = 'active'
-         AND r.sales_paused = FALSE
-         AND o.active = TRUE
-         AND o.approval_status = 'approved'
-         AND o.price = $2`,
-      [businessTill, amount]
-    );
-
-    for (const row of resellerOffers.rows) {
-      matchingBusinesses.push({
-        resellerId: row.reseller_id,
-        offer: {
-          id: row.offer_id,
-          name: row.offer_name,
-          price: row.offer_price
-        }
-      });
-    }
-
-    if (matchingBusinesses.length !== 1) {
-      const note =
-        matchingBusinesses.length === 0
-          ? "No active offer matched this Till and amount"
-          : "More than one offer matched this Till and amount";
-
-      await client.query(
-        `UPDATE mpesa_callback_events
-         SET processing_status = 'unmatched',
-             processing_note = $1
-         WHERE trans_id = $2`,
-        [note, receipt]
-      );
-
-      await client.query(
-        `UPDATE payments
-         SET status = 'unmatched'
-         WHERE receipt_number = $1`,
-        [receipt]
-      );
-
-      await client.query("COMMIT");
-
-      return res.json({
-        ResultCode: 0,
-        ResultDesc: "Payment recorded for review"
-      });
-    }
-
-    const matched = matchingBusinesses[0];
-
-    const orderResult = await client.query(
-      `INSERT INTO orders (
-        reseller_id,
-        offer_id,
-        payment_receipt,
-        payer_phone,
-        recipient_phone,
-        amount,
-        status
-      )
-      VALUES ($1, $2, $3, $4, $4, $5, 'pending')
-      ON CONFLICT (payment_receipt) DO NOTHING
-      RETURNING id`,
-      [
-        matched.resellerId,
-        matched.offer.id,
-        receipt,
-        payerPhone,
-        amount
-      ]
-    );
-
-    if (orderResult.rows.length === 0) {
-      await client.query(
-        `UPDATE mpesa_callback_events
-         SET processing_status = 'processed',
-             processing_note = 'Existing order found'
-         WHERE trans_id = $1`,
-        [receipt]
-      );
-
-      await client.query("COMMIT");
-
-      return res.json({
-        ResultCode: 0,
-        ResultDesc: "Payment already processed"
-      });
-    }
-
-    const orderId = orderResult.rows[0].id;
-
-    await client.query(
-      `INSERT INTO ussd_agent_jobs (
-        order_id,
-        status
-      )
-      VALUES ($1, 'pending')
-      ON CONFLICT (order_id) DO NOTHING`,
-      [orderId]
-    );
-
-    await client.query(
-      `UPDATE mpesa_callback_events
-       SET processing_status = 'queued',
-           processing_note = 'Matching order and fulfilment job created'
-       WHERE trans_id = $1`,
-      [receipt]
-    );
-
-    await client.query("COMMIT");
-
-    res.json({
-      ResultCode: 0,
-      ResultDesc: "Payment received and order queued"
-    });
-  } catch (error) {
-    await client.query("ROLLBACK");
-
-    console.error(
-      "M-Pesa confirmation error:",
-      error.message
-    );
-
-    res.status(500).json({
-      ResultCode: 1,
-      ResultDesc: "Unable to process payment"
-    });
-  } finally {
-    client.release();
-  }
-});
-// Register an Android fulfilment device.
-app.post(
-  "/api/devices/register",
-  authenticateToken,
-  requireAdminOrReseller,
-  async (req, res) => {
-    try {
-      const deviceName = String(
-        req.body.device_name || ""
-      ).trim();
-
-      const phone = normalizePhone(req.body.phone);
-
-      if (!deviceName) {
-        return sendError(
-          res,
-          400,
-          "Enter a name for this Android device."
-        );
-      }
-
-      const resellerId =
-        req.user.role === "reseller"
-          ? req.user.resellerId
-          : null;
-
-      const deviceToken = crypto
-        .randomBytes(32)
-        .toString("hex");
-
-      const result = await pool.query(
-        `INSERT INTO ussd_devices (
-          reseller_id,
-          device_name,
-          phone,
-          device_token,
-          status,
-          last_seen
-        )
-        VALUES ($1, $2, $3, $4, 'online', NOW())
-        RETURNING id, device_name, phone, status, created_at`,
-        [
-          resellerId,
-          deviceName,
-          phone,
-          deviceToken
-        ]
-      );
-
-      res.status(201).json({
-        status: "SUCCESS",
-        message: "Android device registered.",
-        device: result.rows[0],
-        device_token: deviceToken
-      });
-    } catch (error) {
-      console.error(
-        "Device registration error:",
-        error.message
-      );
-
-      sendError(
-        res,
-        400,
-        "Unable to register this device."
-      );
-    }
-  }
-);
-
-// Authenticate a registered Android device.
-async function authenticateDevice(req, res, next) {
-  try {
-    const deviceToken = String(
-      req.headers["x-device-token"] || ""
-    );
-
-    if (!deviceToken) {
-      return sendError(
-        res,
-        401,
-        "Device authentication required."
-      );
-    }
-
-    const result = await pool.query(
-      `SELECT id, reseller_id, device_name, phone
-       FROM ussd_devices
-       WHERE device_token = $1
-         AND status <> 'disabled'
-       LIMIT 1`,
-      [deviceToken]
-    );
-
-    if (result.rows.length === 0) {
-      return sendError(
-        res,
-        401,
-        "Invalid or disabled device."
-      );
-    }
-
-    req.device = result.rows[0];
-
-    await pool.query(
-      `UPDATE ussd_devices
-       SET status = 'online',
-           last_seen = NOW()
-       WHERE id = $1`,
-      [req.device.id]
-    );
-
-    next();
-  } catch (error) {
-    console.error(
-      "Device authentication error:",
-      error.message
-    );
-
-    sendError(
-      res,
-      500,
-      "Unable to authenticate device."
-    );
-  }
-}
-
-// Device heartbeat.
-app.post(
-  "/api/devices/heartbeat",
-  authenticateDevice,
-  async (req, res) => {
-    try {
-      await pool.query(
-        `UPDATE ussd_devices
-         SET status = 'online',
-             last_seen = NOW()
-         WHERE id = $1`,
-        [req.device.id]
-      );
-
-      res.json({
-        status: "SUCCESS",
-        message: "Device connection updated.",
-        server_time: new Date().toISOString()
-      });
-    } catch (error) {
-      console.error(
-        "Device heartbeat error:",
-        error.message
-      );
-
-      sendError(
-        res,
-        500,
-        "Unable to update device connection."
-      );
-    }
-  }
-);
-
-// Atomically claim the next available order.
-app.post(
-  "/api/devices/jobs/claim",
-  authenticateDevice,
-  async (req, res) => {
-    const client = await pool.connect();
-
-    try {
-      await client.query("BEGIN");
-
-      const device = req.device;
-
-      const result = await client.query(
-        `SELECT
-           j.id AS job_id,
-           j.order_id,
-           o.reseller_id,
-           o.payer_phone,
-           o.recipient_phone,
-           o.amount,
-           o.payment_receipt,
-           o.offer_id,
-           f.name AS offer_name,
-           f.ussd_code,
-           f.alternative_ussd_code,
-           f.menu_keyword,
-           f.delivery_method
-         FROM ussd_agent_jobs j
-         JOIN orders o ON o.id = j.order_id
-         JOIN offers f ON f.id = o.offer_id
-         WHERE j.status = 'pending'
-           AND o.status = 'pending'
-           AND o.reseller_id IS NOT DISTINCT FROM $1
-           AND (
-             j.device_id IS NULL
-             OR j.device_id = $2
-           )
-         ORDER BY j.created_at ASC
-                   LIMIT 1
-          FOR UPDATE OF j SKIP LOCKED`,
-        [
-          device.reseller_id,
-          device.id
-        ]
-      );
-
-      if (result.rows.length === 0) {
-        await client.query("COMMIT");
-
-        return res.json({
-          status: "SUCCESS",
-          job: null,
-          message: "No pending jobs."
-        });
-      }
-
-      const job = result.rows[0];
-
-      await client.query(
-        `UPDATE ussd_agent_jobs
-         SET status = 'processing',
-             device_id = $1,
-             attempts = attempts + 1,
-             updated_at = NOW()
-         WHERE id = $2`,
-        [device.id, job.job_id]
-      );
-
-      await client.query(
-        `UPDATE orders
-         SET status = 'processing',
-             updated_at = NOW()
-         WHERE id = $1`,
-        [job.order_id]
-      );
-
-      await client.query("COMMIT");
-
-      res.json({
-        status: "SUCCESS",
-        job: {
-          job_id: job.job_id,
-          order_id: job.order_id,
-          recipient_phone: job.recipient_phone,
-          payer_phone: job.payer_phone,
-          amount: job.amount,
-          payment_receipt: job.payment_receipt,
-          offer_id: job.offer_id,
-          offer_name: job.offer_name,
-          ussd_code: job.ussd_code,
-          alternative_ussd_code:
-            job.alternative_ussd_code,
-          menu_keyword: job.menu_keyword,
-          delivery_method: job.delivery_method
-        }
-      });
-    } catch (error) {
-      await client.query("ROLLBACK");
-
-      console.error(
-        "Job claim error:",
-        error.message
-      );
-
-      sendError(
-        res,
-        500,
-        "Unable to claim a fulfilment job."
-      );
-    } finally {
-      client.release();
-    }
-  }
-);
-app.post(
-  "/api/devices/jobs/:id/result",
-  authenticateDevice,
-  async (req, res) => {
-    const client = await pool.connect();
-
-    try {
-      const jobId = Number(req.params.id);
-      const resultStatus = String(
-        req.body.status || ""
-      ).toLowerCase();
-
-      const deliveryReference = String(
-        req.body.delivery_reference || ""
-      ).trim();
-
-      const errorMessage = String(
-        req.body.error_message || ""
-      ).trim();
-
-      if (
-        !Number.isSafeInteger(jobId) ||
-        jobId < 1
-      ) {
-        return sendError(res, 400, "Invalid job ID.");
-      }
-
-      if (!["success", "failed"].includes(resultStatus)) {
-        return sendError(
-          res,
-          400,
-          "Result must be success or failed."
-        );
-      }
-
-      if (
-        resultStatus === "success" &&
-        !deliveryReference
-      ) {
-        return sendError(
-          res,
-          400,
-          "A delivery confirmation reference is required."
-        );
-      }
-
-      await client.query("BEGIN");
-
-      const jobResult = await client.query(
-        `SELECT
-           j.id,
-           j.order_id,
-           j.status,
-           j.device_id,
-           o.reseller_id,
-           o.offer_id,
-           o.payment_receipt,
-           o.status AS order_status
-         FROM ussd_agent_jobs j
-         JOIN orders o ON o.id = j.order_id
-         WHERE j.id = $1
-         FOR UPDATE OF j, o`,
-        [jobId]
-      );
-
-      if (jobResult.rows.length === 0) {
-        await client.query("ROLLBACK");
-        return sendError(res, 404, "Fulfilment job not found.");
-      }
-
-      const job = jobResult.rows[0];
-
-      if (Number(job.device_id) !== Number(req.device.id)) {
-        await client.query("ROLLBACK");
-
-        return sendError(
-          res,
-          403,
-          "This job belongs to another device."
-        );
-      }
-
-      if (job.status !== "processing") {
-        await client.query("ROLLBACK");
-
-        return sendError(
-          res,
-          409,
-          "This job is no longer processing."
-        );
-      }
-
-      if (resultStatus === "success") {
-        await client.query(
-          `UPDATE ussd_agent_jobs
-           SET status = 'completed',
-               last_error = NULL,
-               updated_at = NOW()
-           WHERE id = $1`,
-          [jobId]
-        );
-
-        await client.query(
-          `UPDATE orders
-           SET status = 'completed',
-               updated_at = NOW()
-           WHERE id = $1`,
-          [job.order_id]
-        );
-
-        await client.query(
-          `UPDATE mpesa_callback_events
-           SET processing_status = 'delivered',
-               processing_note = $1
-           WHERE trans_id = $2`,
-          [
-            "Delivery confirmed: " + deliveryReference,
-            job.payment_receipt
-          ]
-        );
-
-        await client.query("COMMIT");
-
-        return res.json({
-          status: "SUCCESS",
-          message: "Delivery result recorded.",
-          order_status: "completed",
-          token_deduction: "Not yet implemented"
-        });
-      }
-
-      await client.query(
-        `UPDATE ussd_agent_jobs
-         SET status = 'failed',
-             last_error = $1,
-             updated_at = NOW()
-         WHERE id = $2`,
-        [
-          errorMessage || "Device reported delivery failure.",
-          jobId
-        ]
-      );
-
-      await client.query(
-        `UPDATE orders
-         SET status = 'failed',
-             updated_at = NOW()
-         WHERE id = $1`,
-        [job.order_id]
-      );
-
-      await client.query(
-        `UPDATE mpesa_callback_events
-         SET processing_status = 'failed',
-             processing_note = $1
-         WHERE trans_id = $2`,
-        [
-          errorMessage || "USSD fulfilment failed.",
-          job.payment_receipt
-        ]
-      );
-
-      await client.query("COMMIT");
-
-      res.json({
-        status: "SUCCESS",
-        message: "Failed delivery recorded for review.",
-        order_status: "failed",
-        token_deduction: "None"
-      });
-    } catch (error) {
-      await client.query("ROLLBACK");
-
-      console.error(
-        "Fulfilment result error:",
-        error.message
-      );
-
-      sendError(
-        res,
-        500,
-        "Unable to record fulfilment result."
-      );
-    } finally {
-      client.release();
-    }
-  }
-);
-
-// Allow an administrator to inspect fulfilment jobs.
-app.get(
-  "/api/admin/fulfilment/jobs",
-  authenticateToken,
-  requireAdmin,
-  async (req, res) => {
-    try {
-      const result = await pool.query(
-        `SELECT
-           j.id AS job_id,
-           j.order_id,
-           j.status AS job_status,
-           j.attempts,
-           j.last_error,
-           j.created_at,
-           j.updated_at,
-           o.payment_receipt,
-           o.payer_phone,
-           o.recipient_phone,
-           o.amount,
-           o.status AS order_status,
-           f.name AS offer_name,
-           d.device_name,
-           d.phone AS device_phone
-         FROM ussd_agent_jobs j
-         JOIN orders o ON o.id = j.order_id
-         JOIN offers f ON f.id = o.offer_id
-         LEFT JOIN ussd_devices d ON d.id = j.device_id
-         ORDER BY j.created_at DESC
-         LIMIT 200`
-      );
-
-      res.json({
-        status: "SUCCESS",
-        jobs: result.rows
-      });
-    } catch (error) {
-      console.error(
-        "Admin fulfilment list error:",
-        error.message
-      );
-
-      sendError(
-        res,
-        500,
-        "Unable to load fulfilment jobs."
-      );
-    }
-  }
-);
-async function installTokenDeduction() {
-  await pool.query(`
-    CREATE UNIQUE INDEX IF NOT EXISTS
-      idx_token_transactions_order_deduction
-    ON token_transactions (
-      reseller_id,
-      reference,
-      transaction_type
-    )
-    WHERE reference IS NOT NULL;
-
-    CREATE OR REPLACE FUNCTION deduct_bundle_token()
-    RETURNS TRIGGER AS $$
-    BEGIN
-      IF NEW.status = 'completed'
-         AND OLD.status IS DISTINCT FROM 'completed'
-         AND NEW.reseller_id IS NOT NULL
-      THEN
-        INSERT INTO token_wallets (
-          reseller_id,
-          balance
-        )
-        VALUES (
-          NEW.reseller_id,
-          0
-        )
-        ON CONFLICT (reseller_id) DO NOTHING;
-
-        INSERT INTO token_transactions (
-          reseller_id,
-          amount,
-          transaction_type,
-          reference,
-          description
-        )
-        VALUES (
-          NEW.reseller_id,
-          -1,
-          'bundle_deduction',
-          'ORDER-' || NEW.id::TEXT,
-          'One token deducted after successful bundle delivery'
-        )
-        ON CONFLICT (
-          reseller_id,
-          reference,
-          transaction_type
-        )
-        WHERE reference IS NOT NULL
-        DO NOTHING;
-
-        IF FOUND THEN
-          UPDATE token_wallets
-          SET balance = balance - 1,
-              updated_at = NOW()
-          WHERE reseller_id = NEW.reseller_id;
-        END IF;
-      END IF;
-
-      RETURN NEW;
-    END;
-    $$ LANGUAGE plpgsql;
-
-    DROP TRIGGER IF EXISTS
-      trigger_deduct_bundle_token
-    ON orders;
-
-    CREATE TRIGGER trigger_deduct_bundle_token
-    AFTER UPDATE OF status ON orders
-    FOR EACH ROW
-    EXECUTE FUNCTION deduct_bundle_token();
-  `);
-
-  console.log("Automatic token deduction protection installed.");
-}
-
-// Read the reseller's current token balance.
-app.get(
-  "/api/resellers/tokens",
-  authenticateToken,
-  requireReseller,
-  async (req, res) => {
-    try {
-      const result = await pool.query(
-        `SELECT balance
-         FROM token_wallets
-         WHERE reseller_id = $1
-         LIMIT 1`,
-        [req.user.resellerId]
-      );
-
-      res.json({
-        status: "SUCCESS",
-        token_balance: result.rows.length
-          ? Number(result.rows[0].balance)
-          : 0
-      });
-    } catch (error) {
-      console.error("Token balance error:", error.message);
-
-      sendError(
-        res,
-        500,
-        "Unable to load token balance."
-      );
-    }
-  }
-);
-
-// View reseller token transaction history.
-app.get(
-  "/api/resellers/tokens/history",
-  authenticateToken,
-  requireReseller,
-  async (req, res) => {
-    try {
-      const result = await pool.query(
-        `SELECT
-           id,
-           amount,
-           transaction_type,
-           reference,
-           description,
-           created_at
-         FROM token_transactions
-         WHERE reseller_id = $1
-         ORDER BY created_at DESC
-         LIMIT 100`,
-        [req.user.resellerId]
-      );
-
-      res.json({
-        status: "SUCCESS",
-        transactions: result.rows
-      });
-    } catch (error) {
-      console.error("Token history error:", error.message);
-
-      sendError(
-        res,
-        500,
-        "Unable to load token transaction history."
-      );
-    }
-  }
-);
-
-// SECTION 15: TRANSACTION HISTORY
-
-app.get(
-  "/api/transactions",
-  authenticateToken,
-  requireAdminOrReseller,
-  async (req, res) => {
-    try {
-      let query;
-      let values = [];
-
-      if (req.user.role === "admin") {
-        query = `
-          SELECT
-            o.id,
-            o.reseller_id,
-            o.offer_id,
-            o.payer_phone,
-            o.recipient_phone,
-            o.amount,
-            o.status,
-            o.payment_receipt,
-            o.created_at,
-            o.updated_at,
-            f.name AS offer_name,
-            r.name AS reseller_name,
-            p.receipt_number,
-            p.status AS payment_status
-          FROM orders o
-          LEFT JOIN offers f
-            ON f.id = o.offer_id
-          LEFT JOIN resellers r
-            ON r.id = o.reseller_id
-          LEFT JOIN payments p
-            ON p.receipt_number = o.payment_receipt
-          ORDER BY o.created_at DESC
-          LIMIT 200
-        `;
-      } else {
-        query = `
-          SELECT
-            o.id,
-            o.reseller_id,
-            o.offer_id,
-            o.payer_phone,
-            o.recipient_phone,
-            o.amount,
-            o.status,
-            o.payment_receipt,
-            o.created_at,
-            o.updated_at,
-            f.name AS offer_name,
-            p.receipt_number,
-            p.status AS payment_status
-          FROM orders o
-          LEFT JOIN offers f
-            ON f.id = o.offer_id
-          LEFT JOIN payments p
-            ON p.receipt_number = o.payment_receipt
-          WHERE o.reseller_id = $1
-          ORDER BY o.created_at DESC
-          LIMIT 200
-        `;
-
-        values = [req.user.resellerId];
-      }
-
-      const result = await pool.query(query, values);
-
-      return res.json({
-        status: "SUCCESS",
-        transactions: result.rows
-      });
-    } catch (error) {
-      console.error("Transaction history error:", error.message);
-
-      return sendError(
-        res,
-        500,
-        "Unable to load transaction history."
-      );
-    }
-  }
-);
-
-// ADMIN: VIEW UNMATCHED PAYMENTS
-
-app.get(
-  "/api/admin/payments/unmatched",
-  authenticateToken,
-  requireAdmin,
-  async (req, res) => {
-    try {
-      const result = await pool.query(`
-        SELECT
-          p.id,
-          p.receipt_number,
-          p.amount,
-          p.payer_phone,
-          p.business_till,
-          p.status,
-          p.created_at
-        FROM payments p
-        LEFT JOIN orders o
-          ON o.payment_receipt = p.receipt_number
-        WHERE o.id IS NULL
-        ORDER BY p.created_at DESC
-        LIMIT 200
-      `);
-
-      return res.json({
-        status: "SUCCESS",
-        payments: result.rows
-      });
-    } catch (error) {
-      console.error("Unmatched payments error:", error.message);
-
-      return sendError(
-        res,
-        500,
-        "Unable to load unmatched payments."
-      );
-    }
-  }
-);
-  // SECTION 15: TRANSACTION HISTORY
-
-app.get(
-  "/api/transactions",
-  authenticateToken,
-  requireAdminOrReseller,
-  async (req, res) => {
-    try {
-      let query;
-      let values = [];
-
-      if (req.user.role === "admin") {
-        query = `
-          SELECT
-            o.id,
-            o.reseller_id,
-            o.offer_id,
-            o.payer_phone,
-            o.recipient_phone,
-            o.amount,
-            o.status,
-            o.payment_receipt,
-            o.created_at,
-            o.updated_at,
-            f.name AS offer_name,
-            r.name AS reseller_name,
-            p.receipt_number,
-            p.status AS payment_status
-          FROM orders o
-          LEFT JOIN offers f
-            ON f.id = o.offer_id
-          LEFT JOIN resellers r
-            ON r.id = o.reseller_id
-          LEFT JOIN payments p
-            ON p.receipt_number = o.payment_receipt
-          ORDER BY o.created_at DESC
-          LIMIT 200
-        `;
-      } else {
-        query = `
-          SELECT
-            o.id,
-            o.reseller_id,
-            o.offer_id,
-            o.payer_phone,
-            o.recipient_phone,
-            o.amount,
-            o.status,
-            o.payment_receipt,
-            o.created_at,
-            o.updated_at,
-            f.name AS offer_name,
-            p.receipt_number,
-            p.status AS payment_status
-          FROM orders o
-          LEFT JOIN offers f
-            ON f.id = o.offer_id
-          LEFT JOIN payments p
-            ON p.receipt_number = o.payment_receipt
-          WHERE o.reseller_id = $1
-          ORDER BY o.created_at DESC
-          LIMIT 200
-        `;
-
-        values = [req.user.resellerId];
-      }
-
-      const result = await pool.query(query, values);
-
-      return res.json({
-        status: "SUCCESS",
-        transactions: result.rows
-      });
-    } catch (error) {
-      console.error("Transaction history error:", error.message);
-
-      return sendError(
-        res,
-        500,
-        "Unable to load transaction history."
-      );
-    }
-  }
-);
-
-// ADMIN: VIEW UNMATCHED PAYMENTS
-
-app.get(
-  "/api/admin/payments/unmatched",
-  authenticateToken,
-  requireAdmin,
-  async (req, res) => {
-    try {
-      const result = await pool.query(`
-        SELECT
-          p.id,
-          p.receipt_number,
-          p.amount,
-          p.payer_phone,
-
-// SECTION 15: TRANSACTION HISTORY
-
-app.get(
-  "/api/transactions",
-  authenticateToken,
-  requireAdminOrReseller,
-  async (req, res) => {
-
-// SECTION 16: RESELLER SALES CONTROLS
 
 app.patch(
-  "/api/resellers/system/sales-status",
+  "/api/admin/offers/:id/active",
   authenticateToken,
-  requireReseller,
+  requireAdmin,
   async (req, res) => {
-    const paused = req.body.paused;
+    const offerId = Number(req.params.id);
 
-    if (typeof paused !== "boolean") {
-      return sendError(
-        res,
-        400,
-        "Paused must be true or false."
-      );
+    if (!Number.isSafeInteger(offerId) || offerId < 1) {
+      return sendError(res, 400, "Invalid offer ID.");
+    }
+
+    if (typeof req.body.active !== "boolean") {
+      return sendError(res, 400, "Active must be true or false.");
     }
 
     try {
       const result = await pool.query(
-        `
-          UPDATE resellers
-          SET sales_paused = $1
-          WHERE id = $2
-          RETURNING id, sales_paused
-        `,
-        [paused, req.user.resellerId]
+        `UPDATE offers o
+         SET active = $1
+         WHERE o.id = $2
+           AND (
+             $1 = FALSE
+             OR (
+               o.approval_status = 'approved'
+               AND EXISTS (
+                 SELECT 1
+                 FROM product_catalog p
+                 WHERE p.id = o.catalog_product_id
+                   AND p.active = TRUE
+                   AND p.delivery_method IS NOT NULL
+                   AND (
+                     p.delivery_method <> 'ussd'
+                     OR NULLIF(p.ussd_code, '') IS NOT NULL
+                   )
+               )
+             )
+           )
+         RETURNING *`,
+        [req.body.active, offerId]
       );
 
-      if (result.rowCount === 0) {
-        return sendError(res, 404, "Reseller account not found.");
-      }
-
-      return res.json({
-        status: "SUCCESS",
-        message: paused
-          ? "Your sales have been paused."
-          : "Your sales have been resumed.",
-        sales_paused: result.rows[0].sales_paused
-      });
-    } catch (error) {
-      console.error("Reseller sales control error:", error.message);
-      return sendError(
-        res,
-        500,
-        "Unable to update your sales status."
-      );
-    }
-  }
-);
-
-// GET THE CURRENT RESELLER SALES STATUS
-
-app.get(
-  "/api/resellers/system/sales-status",
-  authenticateToken,
-  requireReseller,
-  async (req, res) => {
-    try {
-      const result = await pool.query(
-        `
-          SELECT sales_paused
-          FROM resellers
-          WHERE id = $1
-        `,
-        [req.user.resellerId]
-      );
-
-      if (result.rowCount === 0) {
-        return sendError(res, 404, "Reseller account not found.");
-      }
-
-      return res.json({
-        status: "SUCCESS",
-        sales_paused: result.rows[0].sales_paused
-      });
-    } catch (error) {
-      console.error("Reseller sales status error:", error.message);
-      return sendError(
-        res,
-        500,
-        "Unable to load your sales status."
-      );
-    }
-  }
-);
-// SECTION 17: RESELLER SALES-CONTROL DATABASE MIGRATION
-
-async function installResellerSalesControls() {
-  await pool.query(`
-    ALTER TABLE resellers
-    ADD COLUMN IF NOT EXISTS
-    sales_paused BOOLEAN NOT NULL DEFAULT FALSE
-  `);
-
-  console.log("Reseller sales controls database is ready.");
-}
-// SECTION 18: SALES ANALYTICS SUMMARY
-
-app.get(
-  "/api/analytics/summary",
-  authenticateToken,
-  requireAdminOrReseller,
-  async (req, res) => {
-    try {
-      let result;
-
-      if (req.user.role === "admin") {
-        result = await pool.query(`
-          SELECT
-            COUNT(*)::INTEGER AS total_orders,
-
-            COUNT(*) FILTER (
-              WHERE status = 'completed'
-            )::INTEGER AS completed_orders,
-
-            COUNT(*) FILTER (
-              WHERE status = 'pending'
-            )::INTEGER AS pending_orders,
-
-            COUNT(*) FILTER (
-              WHERE status = 'failed'
-            )::INTEGER AS failed_orders,
-
-            COALESCE(
-              SUM(amount) FILTER (
-                WHERE status = 'completed'
-              ),
-              0
-            ) AS completed_sales,
-
-            COALESCE(
-              SUM(amount) FILTER (
-                WHERE status = 'pending'
-              ),
-              0
-            ) AS pending_sales
-
-          FROM orders
-        `);
-      } else {
-        result = await pool.query(
-          `
-            SELECT
-              COUNT(*)::INTEGER AS total_orders,
-
-              COUNT(*) FILTER (
-                WHERE status = 'completed'
-              )::INTEGER AS completed_orders,
-
-              COUNT(*) FILTER (
-                WHERE status = 'pending'
-              )::INTEGER AS pending_orders,
-
-              COUNT(*) FILTER (
-                WHERE status = 'failed'
-              )::INTEGER AS failed_orders,
-
-              COALESCE(
-                SUM(amount) FILTER (
-                  WHERE status = 'completed'
-                ),
-                0
-              ) AS completed_sales,
-
-              COALESCE(
-                SUM(amount) FILTER (
-                  WHERE status = 'pending'
-                ),
-                0
-              ) AS pending_sales
-
-            FROM orders
-            WHERE reseller_id = $1
-          `,
-          [req.user.resellerId]
+      if (!result.rows.length) {
+        return sendError(
+          res,
+          400,
+          "Offer not found, not approved, or missing an active delivery configuration."
         );
       }
 
       return res.json({
         status: "SUCCESS",
-        analytics: result.rows[0]
+        message: req.body.active
+          ? "Offer activated."
+          : "Offer deactivated.",
+        offer: result.rows[0]
       });
     } catch (error) {
-      console.error("Analytics summary error:", error.message);
-
-      return sendError(
-        res,
-        500,
-        "Unable to load sales analytics."
-      );
+      console.error("Offer activation error:", error.message);
+      return sendError(res, 500, "Unable to change offer activation.");
     }
   }
 );
-// SECTION 19: NOTIFICATION SUMMARY
 
-// RESELLER: COUNT UNREAD NOTIFICATIONS
-
-app.get(
-  "/api/resellers/notifications/unread-count",
+app.patch(
+  "/api/reseller/offers/:id",
   authenticateToken,
   requireReseller,
   async (req, res) => {
+    const offerId = Number(req.params.id);
+
+    if (!Number.isSafeInteger(offerId) || offerId < 1) {
+      return sendError(res, 400, "Invalid offer ID.");
+    }
+
+    const updates = [];
+    const values = [];
+    let position = 1;
+
+    if (req.body.name !== undefined) {
+      const name = String(req.body.name || "").trim();
+
+      if (!name) {
+        return sendError(res, 400, "Offer name cannot be empty.");
+      }
+
+      updates.push(`name = $${position++}`);
+      values.push(name);
+    }
+
+    if (req.body.price !== undefined) {
+      const price = validateOfferPrice(req.body.price);
+
+      if (!price) {
+        return sendError(res, 400, "Enter a valid offer price.");
+      }
+
+      updates.push(`price = $${position++}`);
+      values.push(price);
+    }
+
+    if (!updates.length) {
+      return sendError(res, 400, "No supported changes supplied.");
+    }
+
+    updates.push("approval_status = 'pending'");
+    updates.push("active = FALSE");
+
+    values.push(offerId, req.user.resellerId);
+
     try {
       const result = await pool.query(
-        `
-          SELECT COUNT(*)::INTEGER AS unread_count
-          FROM reseller_notifications
-          WHERE reseller_id = $1
-            AND read_at IS NULL
-        `,
-        [req.user.resellerId]
+        `UPDATE offers
+         SET ${updates.join(", ")}
+         WHERE id = $${position}
+           AND reseller_id = $${position + 1}
+         RETURNING *`,
+        values
       );
+
+      if (!result.rows.length) {
+        return sendError(
+          res,
+          404,
+          "Your offer was not found."
+        );
+      }
 
       return res.json({
         status: "SUCCESS",
-        unread_count: result.rows[0].unread_count
+        message: "Offer updated and submitted for approval.",
+        offer: result.rows[0]
       });
     } catch (error) {
-      console.error("Unread notification count error:", error.message);
-
-      return sendError(
-        res,
-        500,
-        "Unable to load unread notifications."
-      );
+      console.error("Reseller offer update error:", error.message);
+      return sendError(res, 500, "Unable to update your offer.");
     }
   }
 );
 
-// ADMIN: VIEW RECENT RESELLER NOTIFICATIONS
-
-app.get(
-  "/api/admin/notifications",
+app.patch(
+  "/api/reseller/offers/:id/active",
   authenticateToken,
-  requireAdmin,
+  requireReseller,
   async (req, res) => {
+    const offerId = Number(req.params.id);
+
+    if (!Number.isSafeInteger(offerId) || offerId < 1) {
+      return sendError(res, 400, "Invalid offer ID.");
+    }
+
+    if (typeof req.body.active !== "boolean") {
+      return sendError(res, 400, "Active must be true or false.");
+    }
+
     try {
-      const result = await pool.query(`
-        SELECT
-          n.id,
-          n.reseller_id,
-          r.full_name AS reseller_name,
-          n.title,
-          n.message,
-          n.notification_type,
-          n.read_at,
-          n.created_at
-        FROM reseller_notifications n
-        JOIN resellers r
-          ON r.id = n.reseller_id
-        ORDER BY n.created_at DESC
-        LIMIT 200
-      `);
+      const result = await pool.query(
+        `UPDATE offers o
+         SET active = $1
+         WHERE o.id = $2
+           AND o.reseller_id = $3
+           AND (
+             $1 = FALSE
+             OR (
+               o.approval_status = 'approved'
+               AND EXISTS (
+                 SELECT 1
+                 FROM product_catalog p
+                 WHERE p.id = o.catalog_product_id
+                   AND p.active = TRUE
+                   AND p.delivery_method IS NOT NULL
+                   AND (
+                     p.delivery_method <> 'ussd'
+                     OR NULLIF(p.ussd_code, '') IS NOT NULL
+                   )
+               )
+             )
+           )
+         RETURNING *`,
+        [
+          req.body.active,
+          offerId,
+          req.user.resellerId
+        ]
+      );
+
+      if (!result.rows.length) {
+        return sendError(
+          res,
+          400,
+          "Your offer was not found, approved, or ready for delivery."
+        );
+      }
 
       return res.json({
         status: "SUCCESS",
-        notifications: result.rows
+        message: req.body.active
+          ? "Your offer is active."
+          : "Your offer is inactive.",
+        offer: result.rows[0]
       });
     } catch (error) {
-      console.error("Admin notifications error:", error.message);
-
-      return sendError(
-        res,
-        500,
-        "Unable to load notifications."
-      );
+      console.error("Reseller offer activation error:", error.message);
+      return sendError(res, 500, "Unable to change your offer.");
     }
   }
-);// SECTION 20: SERVER STARTUP
+);
 
-async function startServer() {
-  try {
-    console.log("Starting M-Pesa Auto Bundles backend...");
+app.patch(
+  "/api/reseller/sales-status",
+  authenticateToken,
+  requireReseller,
+  async (req, res) => {
+    if (typeof req.body.paused !== "boolean") {
+      return sendError(res, 400, "Paused must be true or false.");
+    }
 
-    await initializeDatabase();
-
-    await installResellerSalesControls();
-
-    await installTokenDeduction();
-
-    await installOperations(
-      app,
-      pool,
-      authenticateToken,
-      requireAdmin,
-      requireReseller
-    );
-
-    const PORT = process.env.PORT || 3000;
-
-    app.listen(PORT, "0.0.0.0", () => {
-      console.log(
-        `M-Pesa Auto Bundles backend running on port ${PORT}.`
+    try {
+      const result = await pool.query(
+        `UPDATE resellers
+         SET sales_paused = $1
+         WHERE id = $2
+         RETURNING id, sales_paused`,
+        [req.body.paused, req.user.resellerId]
       );
-    });
-  } catch (error) {
-    console.error("Backend startup failed:", error);
 
-    process.exit(1);
+      if (!result.rows.length) {
+        return sendError(res, 404, "Reseller account not found.");
+      }
+
+      return res.json({
+        status: "SUCCESS",
+        message: req.body.paused
+          ? "Your sales are paused."
+          : "Your sales are resumed.",
+        sales_paused: result.rows[0].sales_paused
+      });
+    } catch (error) {
+      console.error("Reseller sales pause error:", error.message);
+      return sendError(res, 500, "Unable to update sales status.");
+    }
   }
-}
-
-startServer();
+);
