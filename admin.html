@@ -213,63 +213,226 @@ button:disabled {
     <button onclick="login()">Login</button>
   </div>
 
-  <main id="dashboard" class="hidden">
-        <div class="card">
-      <div class="top-actions">
-        <h3>Admin Dashboard</h3>
-        <button class="danger" onclick="logout()">Logout</button>
-      </div>
-      <div id="mainMessage" class="message"></div>
-      <p>Manage resellers, review offers and control your bundle catalogue.</p>
+  
+<main id="dashboard" class="hidden">
+
+  <!-- TOP HEADER -->
+  <div class="card" style="background:#087a42;color:white;">
+    <div class="top-actions">
+      <h2 style="color:white;margin:0;">⚡ M-PESA AUTO BUNDLES</h2>
+      <span id="appStatus" style="color:#86efac;">● ACTIVE</span>
     </div>
+    <p style="color:white;">Welcome back, Admin</p>
+    <button class="secondary" onclick="logout()">Logout</button>
+  </div>
+
+  <!-- HOME -->
+  <section id="homeSection">
 
     <div class="card">
-      <div class="top-actions">
-        <h3>Offer Management</h3>
-        <button onclick="showAddOfferForm()">+ Add Offer</button>
-      </div>
-
-      <label>Filter offers by category</label>
-      <select id="categoryFilter" onchange="renderOffers()">
-        <option value="all">All categories</option>
-        <option value="data">Data</option>
-        <option value="sms">SMS</option>
-        <option value="minutes">Minutes</option>
-        <option value="other">Other</option>
-      </select>
-
-      <div id="offersList">Loading offers...</div>
-    </div>
-
-    <div id="addOfferPanel" class="card hidden">
-      <h3>Add New Offer</h3>
-      <div id="offerMessage" class="message"></div>
-
-      <label>Offer name</label>
-      <input id="offerName" placeholder="Example: 1GB Daily">
-
-      <label>Verified catalogue product</label>
-      <select id="catalogProduct">
-        <option value="">Loading catalogue...</option>
-      </select>
-
-      <label>Your selling price (KSh)</label>
-      <input id="offerPrice" type="number"
-             min="1" step="0.01" placeholder="Enter selling price">
-
-      <div class="actions">
-        <button onclick="submitNewOffer()">Save Offer</button>
-        <button class="secondary"
-                onclick="hideAddOfferForm()">Cancel</button>
+      <h3>Business Overview</h3>
+      <div class="grid" style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+        <div class="item">
+          <small>Today's Sales</small>
+          <h2 id="todaySales">KSh 0.00</h2>
+        </div>
+        <div class="item">
+          <small>Today's Commission</small>
+          <h2 id="todayCommission">KSh 0.00</h2>
+        </div>
+        <div class="item">
+          <small>Successful Orders</small>
+          <h2 id="successfulOrders">0</h2>
+        </div>
+        <div class="item">
+          <small>Pending Orders</small>
+          <h2 id="pendingOrders">0</h2>
+        </div>
       </div>
     </div>
 
     <div class="card">
-      <h3>Reseller Management</h3>
-      <div id="resellersList">Loading resellers...</div>
+      <h3>Safaricom Airtime Balance</h3>
+      <h2 id="agentAirtimeBalance">KSh --</h2>
+      <span id="agentLineStatus">Agent line status unavailable</span>
+      <p><small>Registered Bingwa agent SIM balance</small></p>
+      <p id="lowAirtimeWarning"></p>
     </div>
 
-  </main>
+    <div class="card">
+      <h3>This Week's Commission</h3>
+      <p>Monday – Sunday</p>
+      <div id="weeklyCommissionChart">
+        Weekly commission graph will appear here.
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Quick Actions</h3>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+        <button onclick="showDashboardSection('quickDialSection')">
+          📞 Quick Dial
+        </button>
+        <button onclick="showDashboardSection('addOfferPanel')">
+          ➕ Add Offer
+        </button>
+        <button onclick="showDashboardSection('offersSection')">
+          📦 My Offers
+        </button>
+        <button onclick="showDashboardSection('earningsSection')">
+          💰 My Earnings
+        </button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Recent Transactions</h3>
+      <div id="recentTransactions">
+        No recent transactions to display.
+      </div>
+    </div>
+
+    <!-- SMALL PAUSE / RESUME CONTROL -->
+    <div style="display:flex;justify-content:flex-end;margin:12px 0;">
+      <button id="salesToggle"
+        onclick="toggleDashboardSales()"
+        style="border-radius:25px;padding:7px 13px;background:#16834a;">
+        SALES ON ●
+      </button>
+    </div>
+
+  </section>
+
+  <!-- QUICK DIAL -->
+  <section id="quickDialSection" class="card hidden">
+    <h3>Quick Dial</h3>
+    <label>Customer phone number</label>
+    <input id="quickDialPhone" type="tel"
+      placeholder="2547XXXXXXXX">
+
+    <label>Select offer</label>
+    <select id="quickDialOffer">
+      <option value="">Choose an offer</option>
+    </select>
+
+    <div id="quickDialDetails"></div>
+
+    <button onclick="startQuickDial()"
+      style="background:#16834a;width:100%;padding:15px;">
+      ⚡ AUTO — START DELIVERY
+    </button>
+    <button class="secondary"
+      onclick="showDashboardSection('homeSection')">
+      Back to Home
+    </button>
+  </section>
+
+  <!-- OFFERS -->
+  <section id="offersSection" class="card hidden">
+    <h3>My Offers</h3>
+    <label>Filter offers by category</label>
+    <select id="categoryFilter" onchange="renderOffers()">
+      <option value="all">All categories</option>
+      <option value="data">Data</option>
+      <option value="sms">SMS</option>
+      <option value="minutes">Minutes</option>
+      <option value="other">Other</option>
+    </select>
+    <div id="offersList">Loading offers...</div>
+    <button onclick="showDashboardSection('homeSection')">
+      Back to Home
+    </button>
+  </section>
+
+  <!-- ADD OFFER -->
+  <section id="addOfferPanel" class="card hidden">
+    <h3>Add New Offer</h3>
+    <div id="offerMessage" class="message"></div>
+
+    <label>Offer name</label>
+    <input id="offerName" placeholder="Example: 1GB Daily">
+
+    <label>Verified catalogue product</label>
+    <select id="catalogProduct">
+      <option value="">Loading catalogue...</option>
+    </select>
+
+    <label>Your selling price (KSh)</label>
+    <input id="offerPrice" type="number"
+      min="1" step="0.01" placeholder="Enter selling price">
+
+    <div class="actions">
+      <button onclick="submitNewOffer()">Save Offer</button>
+      <button class="secondary"
+        onclick="showDashboardSection('homeSection')">Cancel</button>
+    </div>
+  </section>
+
+  <!-- EARNINGS -->
+  <section id="earningsSection" class="card hidden">
+    <h3>My Earnings</h3>
+    <p id="earningsSummary">Earnings information will appear here.</p>
+    <p id="tokenBalance">Token balance: --</p>
+    <button onclick="showDashboardSection('homeSection')">
+      Back to Home
+    </button>
+  </section>
+
+  <!-- ANALYTICS -->
+  <section id="analyticsSection" class="card hidden">
+    <h3>Analytics</h3>
+    <p>Sales and commission performance.</p>
+    <div id="analyticsContent"></div>
+  </section>
+
+  <!-- TRANSACTIONS -->
+  <section id="transactionsSection" class="card hidden">
+    <h3>Transactions</h3>
+    <div id="transactionsList">Loading transactions...</div>
+  </section>
+
+  <!-- ACCOUNT -->
+  <section id="accountSection" class="card hidden">
+    <h3>My Account</h3>
+    <div id="accountDetails">Loading profile...</div>
+  </section>
+
+  <!-- SETTINGS -->
+  <section id="settingsSection" class="card hidden">
+    <h3>Settings</h3>
+    <button onclick="alert('Password settings will be connected.')">
+      Change Password
+    </button>
+    <button onclick="alert('Notification settings will be connected.')">
+      Notifications
+    </button>
+    <button onclick="alert('Security settings will be connected.')">
+      Security
+    </button>
+    <p>About M-Pesa Auto Bundles</p>
+    <button class="danger" onclick="logout()">Logout</button>
+  </section>
+
+  <!-- BOTTOM NAVIGATION -->
+  <nav style="position:sticky;bottom:0;background:white;
+    display:grid;grid-template-columns:repeat(5,1fr);
+    gap:2px;padding:10px 2px;border-top:1px solid #ddd;
+    z-index:10;">
+    <button onclick="showDashboardSection('homeSection')">⌂<br><small>Home</small></button>
+    <button onclick="showDashboardSection('analyticsSection')">▥<br><small>Analytics</small></button>
+    <button onclick="showDashboardSection('transactionsSection')">▤<br><small>Transactions</small></button>
+    <button onclick="showDashboardSection('accountSection')">♙<br><small>Account</small></button>
+    <button onclick="showDashboardSection('settingsSection')">⚙<br><small>Settings</small></button>
+  </nav>
+
+  <!-- KEEP EXISTING RESELLER MANAGEMENT -->
+  <div class="card">
+    <h3>Reseller Management</h3>
+    <div id="resellersList">Loading resellers...</div>
+  </div>
+
+</main>
+  
 </div>
 
 <script>
