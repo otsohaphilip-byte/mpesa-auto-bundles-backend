@@ -454,6 +454,7 @@ function getAccountId(req) {
   return req.user.resellerId;
 }
 
+
 async function getAdminByEmail(email) {
   const result = await pool.query(
     `SELECT id, email, password_hash, phone
@@ -461,6 +462,20 @@ async function getAdminByEmail(email) {
      WHERE LOWER(email) = LOWER($1)
      LIMIT 1`,
     [String(email || "").trim()]
+  );
+
+  return result.rows[0] || null;
+}
+
+async function getAdminByPhone(phone) {
+  const normalizedPhone = normalizePhone(phone);
+
+  const result = await pool.query(
+    `SELECT id, email, password_hash, phone
+     FROM admin_users
+     WHERE phone = $1
+     LIMIT 1`,
+    [normalizedPhone]
   );
 
   return result.rows[0] || null;
@@ -487,35 +502,46 @@ async function getResellerByEmail(email) {
 }
 
 async function createAdminFromEnvironment() {
-  const email = String(process.env.ADMIN_EMAIL || "").trim();
+  const email = String(process.env.ADMIN_EMAIL || "")
+    .trim()
+    .toLowerCase();
   const password = String(process.env.ADMIN_PASSWORD || "");
+  const phoneInput = String(process.env.ADMIN_PHONE || "").trim();
 
-  if (!email || !password) {
+  if (!email || !password || !phoneInput) {
     console.log(
-      "Admin bootstrap skipped: ADMIN_EMAIL or ADMIN_PASSWORD is not configured."
+      "Admin bootstrap skipped: ADMIN_EMAIL, ADMIN_PASSWORD or ADMIN_PHONE is missing."
     );
     return;
   }
 
+  const phone = normalizePhone(phoneInput);
   const existing = await getAdminByEmail(email);
 
   if (existing) {
-    console.log("Existing database administrator found.");
+    await pool.query(
+      `UPDATE admin_users
+       SET phone = $1, updated_at = NOW()
+       WHERE id = $2`,
+      [phone, existing.id]
+    );
+
+    console.log("Existing administrator phone number updated.");
     return;
   }
 
   const passwordHash = await bcrypt.hash(password, 12);
 
   await pool.query(
-    `INSERT INTO admin_users (email, password_hash)
-     VALUES ($1, $2)
+    `INSERT INTO admin_users (email, password_hash, phone)
+     VALUES ($1, $2, $3)
      ON CONFLICT (email) DO NOTHING`,
-    [email, passwordHash]
+    [email, passwordHash, phone]
   );
 
   console.log("Initial administrator account created.");
-}
-
+      }
+  
 const loginAttempts = new Map();
 
 function checkLoginRateLimit(key) {
