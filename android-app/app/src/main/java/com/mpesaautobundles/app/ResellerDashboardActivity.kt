@@ -171,17 +171,22 @@ class ResellerDashboardActivity : AppCompatActivity() {
         value: String,
         unit: String
     ): View {
-        val card = LinearLayout(this).apply {
+                val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(14, 16, 10, 16)
+            setPadding(16, 19, 12, 19)
+            minimumHeight = (112 * resources.displayMetrics.density).toInt()
             background = roundedBackground(light, 14)
         }
 
-        card.addView(makeText(heading, 13f, grey, true))
+        card.addView(makeText(heading, 14f, darkGreen, true))
         card.addView(
-            makeText(value, 25f, green, true).apply {
+            makeText(value, 26f, green, true).apply {
                 setPadding(0, 9, 0, 2)
             }
+        )
+        card.addView(makeText(unit, 13f, grey))
+
+        return card
         )
         card.addView(makeText(unit, 12f, grey))
 
