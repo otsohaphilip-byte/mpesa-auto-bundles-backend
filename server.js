@@ -379,7 +379,7 @@ async function initializeDatabase() {
   await createFulfilmentTables();
   await createAuthenticationTables();
   await runDatabaseMigrations();
-
+  await createAdminFromEnvironment();
   console.log("Database tables and migrations are ready.");
 }
 
