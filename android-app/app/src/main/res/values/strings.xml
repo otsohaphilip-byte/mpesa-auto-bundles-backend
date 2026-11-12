@@ -1,0 +1,6 @@
+
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">M-Pesa Auto Bundles</string>
+    <string name="accessibility_service_description">Supports the authorised M-Pesa Auto Bundles workflow. It does not collect passwords, M-Pesa PINs or personal messages.</string>
+</resources>
