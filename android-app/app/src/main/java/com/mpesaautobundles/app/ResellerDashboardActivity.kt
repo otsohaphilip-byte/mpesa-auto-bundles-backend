@@ -19,12 +19,12 @@ import java.net.URL
 
 class ResellerDashboardActivity : AppCompatActivity() {
 
-    private val green = Color.rgb(0, 140, 69)
-    private val darkGreen = Color.rgb(0, 107, 53)
+        private val green = Color.rgb(0, 153, 76)
+    private val darkGreen = Color.rgb(0, 92, 46)
     private val yellow = Color.rgb(255, 193, 7)
-    private val dark = Color.rgb(35, 45, 40)
-    private val grey = Color.rgb(110, 120, 115)
-    private val light = Color.rgb(245, 248, 246)
+    private val dark = Color.rgb(25, 45, 35)
+    private val grey = Color.rgb(95, 112, 102)
+    private val light = Color.rgb(239, 247, 242)
 
     private lateinit var contentLayout: LinearLayout
 
