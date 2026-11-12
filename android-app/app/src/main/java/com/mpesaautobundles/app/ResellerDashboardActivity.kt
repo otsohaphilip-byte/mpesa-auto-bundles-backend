@@ -1,11 +1,15 @@
-
 package com.mpesaautobundles.app
 
-import android.os.Bundle
+import android.Manifest
+import android.content.ComponentName
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.Color
-import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.net.Uri
+import android.os.Build
+import android.os.Bundle
+import android.provider.Settings
 import android.view.Gravity
 import android.view.View
 import android.widget.Button
@@ -25,6 +29,8 @@ class ResellerDashboardActivity : AppCompatActivity() {
     private val dark = Color.rgb(25, 45, 35)
     private val grey = Color.rgb(95, 112, 102)
     private val light = Color.rgb(239, 247, 242)
+
+    private val permissionViews = mutableMapOf<String, TextView>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -48,29 +54,40 @@ class ResellerDashboardActivity : AppCompatActivity() {
         }
 
         val scroll = ScrollView(this)
+
         val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(18, 18, 18, 20)
+            setPadding(dp(18), dp(18), dp(18), dp(20))
         }
 
         content.addView(createHeader())
-        content.addView(makeText("Welcome back!", 25f, dark, true).apply {
-            setPadding(0, 22, 0, 4)
-        })
-        content.addView(makeText(
-            "Here is your business overview.", 14f, grey
-        ))
+
+        content.addView(
+            makeText("Welcome back!", 25f, dark, true).apply {
+                setPadding(0, dp(22), 0, dp(4))
+            }
+        )
+
+        content.addView(
+            makeText(
+                "Here is your business overview.",
+                14f,
+                grey
+            )
+        )
+
         content.addView(createStatsGrid())
         content.addView(createCommissionSection())
         content.addView(createQuickActions())
         content.addView(createRecentTransactions())
+        content.addView(createPermissionSection())
 
         scroll.addView(content)
 
         root.addView(
             scroll,
             LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
+                -1,
                 0,
                 1f
             )
@@ -80,7 +97,14 @@ class ResellerDashboardActivity : AppCompatActivity() {
         root.addView(createBottomNavigation())
 
         setContentView(root)
+
+        refreshPermissionStatus()
         validateSession(token)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        refreshPermissionStatus()
     }
 
     private fun createHeader(): View {
@@ -95,14 +119,15 @@ class ResellerDashboardActivity : AppCompatActivity() {
         }
 
         brand.addView(makeText("⚡", 34f, yellow, true))
-        brand.addView(makeText(
-            "M-PESA AUTO BUNDLES", 16f, green, true
-        ))
+        brand.addView(
+            makeText("M-PESA AUTO BUNDLES", 16f, green, true)
+        )
 
         header.addView(
             brand,
-            LinearLayout.LayoutParams(0, 55, 1f)
+            LinearLayout.LayoutParams(0, dp(55), 1f)
         )
+
         header.addView(makeText("♧", 27f, green, true))
 
         return header
@@ -111,7 +136,7 @@ class ResellerDashboardActivity : AppCompatActivity() {
     private fun createStatsGrid(): View {
         val container = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(0, 20, 0, 0)
+            setPadding(0, dp(20), 0, 0)
         }
 
         val first = LinearLayout(this)
@@ -121,14 +146,17 @@ class ResellerDashboardActivity : AppCompatActivity() {
             statCard("Today's Sales", "—", "KES"),
             weightedParams()
         )
+
         first.addView(
             statCard("Commission Earned", "—", "KES"),
             weightedParams()
         )
+
         second.addView(
             statCard("Successful", "—", "Orders"),
             weightedParams()
         )
+
         second.addView(
             statCard("Pending / Failed", "—", "Orders"),
             weightedParams()
@@ -147,15 +175,19 @@ class ResellerDashboardActivity : AppCompatActivity() {
     ): View {
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(16, 19, 12, 19)
+            setPadding(dp(16), dp(19), dp(12), dp(19))
             minimumHeight = dp(112)
             background = roundedBackground(light, 14)
         }
 
         card.addView(makeText(heading, 14f, darkGreen, true))
-        card.addView(makeText(value, 26f, green, true).apply {
-            setPadding(0, 9, 0, 2)
-        })
+
+        card.addView(
+            makeText(value, 26f, green, true).apply {
+                setPadding(0, dp(9), 0, dp(2))
+            }
+        )
+
         card.addView(makeText(unit, 13f, grey))
 
         return card
@@ -167,23 +199,26 @@ class ResellerDashboardActivity : AppCompatActivity() {
             LinearLayout.LayoutParams.WRAP_CONTENT,
             1f
         ).apply {
-            setMargins(4, 5, 4, 5)
+            setMargins(dp(4), dp(5), dp(4), dp(5))
         }
     }
 
     private fun createCommissionSection(): View {
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(16, 18, 16, 18)
+            setPadding(dp(16), dp(18), dp(16), dp(18))
             background = roundedBackground(light, 14)
         }
 
-        card.addView(makeText("Weekly Commission", 17f, dark, true))
-        card.addView(makeText(
-            "Monday – Sunday", 12f, grey
-        ).apply {
-            setPadding(0, 4, 0, 15)
-        })
+        card.addView(
+            makeText("Weekly Commission", 17f, dark, true)
+        )
+
+        card.addView(
+            makeText("Monday – Sunday", 12f, grey).apply {
+                setPadding(0, dp(4), 0, dp(15))
+            }
+        )
 
         val graph = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -191,7 +226,10 @@ class ResellerDashboardActivity : AppCompatActivity() {
             minimumHeight = dp(115)
         }
 
-        val days = listOf("MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN")
+        val days = listOf(
+            "MON", "TUE", "WED", "THU",
+            "FRI", "SAT", "SUN"
+        )
 
         for (day in days) {
             val column = LinearLayout(this).apply {
@@ -207,10 +245,13 @@ class ResellerDashboardActivity : AppCompatActivity() {
                 bar,
                 LinearLayout.LayoutParams(dp(15), dp(48))
             )
-            column.addView(makeText(day, 9f, grey).apply {
-                gravity = Gravity.CENTER
-                setPadding(0, 7, 0, 0)
-            })
+
+            column.addView(
+                makeText(day, 9f, grey).apply {
+                    gravity = Gravity.CENTER
+                    setPadding(0, dp(7), 0, 0)
+                }
+            )
 
             graph.addView(
                 column,
@@ -219,17 +260,20 @@ class ResellerDashboardActivity : AppCompatActivity() {
         }
 
         card.addView(graph)
-        card.addView(makeText(
-            "Actual commission data will appear here.",
-            11f,
-            grey
-        ).apply {
-            setPadding(0, 12, 0, 0)
-        })
+
+        card.addView(
+            makeText(
+                "Actual commission data will appear here.",
+                11f,
+                grey
+            ).apply {
+                setPadding(0, dp(12), 0, 0)
+            }
+        )
 
         return card.apply {
             layoutParams = LinearLayout.LayoutParams(-1, -2).apply {
-                setMargins(0, 12, 0, 0)
+                setMargins(0, dp(12), 0, 0)
             }
         }
     }
@@ -237,18 +281,28 @@ class ResellerDashboardActivity : AppCompatActivity() {
     private fun createQuickActions(): View {
         val section = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(0, 22, 0, 0)
+            setPadding(0, dp(22), 0, 0)
         }
 
-        section.addView(makeText("Quick Actions", 18f, dark, true))
+        section.addView(
+            makeText("Quick Actions", 18f, dark, true)
+        )
 
         val first = LinearLayout(this)
         val second = LinearLayout(this)
 
         first.addView(actionCard("⚡", "Quick Sell"), weightedParams())
         first.addView(actionCard("▣", "My Offers"), weightedParams())
-        second.addView(actionCard("↔", "Transactions"), weightedParams())
-        second.addView(actionCard("◉", "My Earnings"), weightedParams())
+
+        second.addView(
+            actionCard("↔", "Transactions"),
+            weightedParams()
+        )
+
+        second.addView(
+            actionCard("◉", "My Earnings"),
+            weightedParams()
+        )
 
         section.addView(first)
         section.addView(second)
@@ -256,11 +310,14 @@ class ResellerDashboardActivity : AppCompatActivity() {
         return section
     }
 
-    private fun actionCard(symbol: String, label: String): View {
+    private fun actionCard(
+        symbol: String,
+        label: String
+    ): View {
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
-            setPadding(10, 20, 10, 20)
+            setPadding(dp(10), dp(20), dp(10), dp(20))
             minimumHeight = dp(104)
             background = roundedBackground(light, 12)
             isClickable = true
@@ -268,9 +325,12 @@ class ResellerDashboardActivity : AppCompatActivity() {
         }
 
         card.addView(makeText(symbol, 27f, darkGreen, true))
-        card.addView(makeText(label, 14f, dark, true).apply {
-            setPadding(0, 8, 0, 0)
-        })
+
+        card.addView(
+            makeText(label, 14f, dark, true).apply {
+                setPadding(0, dp(8), 0, 0)
+            }
+        )
 
         card.setOnClickListener {
             Toast.makeText(
@@ -286,7 +346,7 @@ class ResellerDashboardActivity : AppCompatActivity() {
     private fun createRecentTransactions(): View {
         val section = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(0, 22, 0, 18)
+            setPadding(0, dp(22), 0, dp(18))
         }
 
         section.addView(
@@ -296,29 +356,213 @@ class ResellerDashboardActivity : AppCompatActivity() {
         val emptyCard = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
-            setPadding(15, 24, 15, 24)
+            setPadding(dp(15), dp(24), dp(15), dp(24))
             background = roundedBackground(light, 12)
         }
 
         emptyCard.addView(makeText("▤", 30f, grey))
-        emptyCard.addView(makeText(
-            "Your recent transactions will appear here.",
-            13f,
-            grey
-        ).apply {
-            gravity = Gravity.CENTER
-            setPadding(0, 8, 0, 0)
-        })
+
+        emptyCard.addView(
+            makeText(
+                "Your recent transactions will appear here.",
+                13f,
+                grey
+            ).apply {
+                gravity = Gravity.CENTER
+                setPadding(0, dp(8), 0, 0)
+            }
+        )
 
         section.addView(emptyCard)
         return section
+    }
+
+    private fun createPermissionSection(): View {
+        val section = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, dp(12), 0, dp(18))
+        }
+
+        section.addView(
+            makeText("App Permissions & Setup", 19f, dark, true)
+        )
+
+        section.addView(
+            makeText(
+                "Check your phone permissions and accessibility setup here.",
+                13f,
+                grey
+            ).apply {
+                setPadding(0, dp(6), 0, dp(12))
+            }
+        )
+
+        val permissions = listOf(
+            "Notifications" to notificationPermission(),
+            "SMS" to Manifest.permission.READ_SMS,
+            "Phone" to Manifest.permission.READ_PHONE_STATE,
+            "Camera" to Manifest.permission.CAMERA,
+            "Contacts" to Manifest.permission.READ_CONTACTS,
+            "Location" to Manifest.permission.ACCESS_FINE_LOCATION,
+            "Nearby devices" to nearbyDevicesPermission()
+        )
+
+        for ((name, permission) in permissions) {
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(12), dp(12), dp(12), dp(12))
+                background = roundedBackground(light, 10)
+            }
+
+            row.addView(
+                makeText(name, 14f, dark, true),
+                LinearLayout.LayoutParams(0, -2, 1f)
+            )
+
+            val status = makeText("Checking…", 12f, grey, true)
+            permissionViews[name] = status
+            row.addView(status)
+
+            section.addView(
+                row,
+                LinearLayout.LayoutParams(-1, -2).apply {
+                    setMargins(0, dp(3), 0, dp(3))
+                }
+            )
+        }
+
+        val accessibilityRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(12), dp(12), dp(12), dp(12))
+            background = roundedBackground(light, 10)
+        }
+
+        accessibilityRow.addView(
+            makeText("Accessibility Service", 14f, dark, true),
+            LinearLayout.LayoutParams(0, -2, 1f)
+        )
+
+        val accessibilityStatus = makeText("Checking…", 12f, grey, true)
+        permissionViews["Accessibility"] = accessibilityStatus
+        accessibilityRow.addView(accessibilityStatus)
+
+        section.addView(
+            accessibilityRow,
+            LinearLayout.LayoutParams(-1, -2).apply {
+                setMargins(0, dp(3), 0, dp(3))
+            }
+        )
+
+        val appSettingsButton = Button(this).apply {
+            text = "OPEN APP PERMISSION SETTINGS"
+            setTextColor(Color.WHITE)
+            setBackgroundColor(green)
+            setOnClickListener {
+                openAppSettings()
+            }
+        }
+
+        section.addView(
+            appSettingsButton,
+            LinearLayout.LayoutParams(-1, dp(50)).apply {
+                setMargins(0, dp(10), 0, dp(6))
+            }
+        )
+
+        val accessibilityButton = Button(this).apply {
+            text = "OPEN ACCESSIBILITY SETTINGS"
+            setTextColor(Color.WHITE)
+            setBackgroundColor(darkGreen)
+            setOnClickListener {
+                try {
+                    startActivity(
+                        Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                    )
+                } catch (_: Exception) {
+                    openAppSettings()
+                }
+            }
+        }
+
+        section.addView(
+            accessibilityButton,
+            LinearLayout.LayoutParams(-1, dp(50))
+        )
+
+        return section
+    }
+
+    private fun notificationPermission(): String {
+        return if (Build.VERSION.SDK_INT >= 33) {
+            Manifest.permission.POST_NOTIFICATIONS
+        } else {
+            "NOT_REQUIRED"
+        }
+    }
+
+    private fun nearbyDevicesPermission(): String {
+        return if (Build.VERSION.SDK_INT >= 31) {
+            Manifest.permission.BLUETOOTH_CONNECT
+        } else {
+            "NOT_REQUIRED"
+        }
+    }
+
+    private fun refreshPermissionStatus() {
+        for ((name, permission) in listOf(
+            "Notifications" to notificationPermission(),
+            "SMS" to Manifest.permission.READ_SMS,
+            "Phone" to Manifest.permission.READ_PHONE_STATE,
+            "Camera" to Manifest.permission.CAMERA,
+            "Contacts" to Manifest.permission.READ_CONTACTS,
+            "Location" to Manifest.permission.ACCESS_FINE_LOCATION,
+            "Nearby devices" to nearbyDevicesPermission()
+        )) {
+            val granted = permission == "NOT_REQUIRED" ||
+                checkSelfPermission(permission) ==
+                PackageManager.PERMISSION_GRANTED
+
+            permissionViews[name]?.apply {
+                text = if (granted) "Granted" else "Not granted"
+                setTextColor(if (granted) green else Color.RED)
+            }
+        }
+
+        val component = ComponentName(
+            this,
+            BundleAutomationAccessibilityService::class.java
+        )
+
+        val enabledServices = Settings.Secure.getString(
+            contentResolver,
+            Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+        ).orEmpty()
+
+        val enabled = enabledServices.split(":").any {
+            it.equals(component.flattenToString(), ignoreCase = true)
+        }
+
+        permissionViews["Accessibility"]?.apply {
+            text = if (enabled) "Enabled" else "Not enabled"
+            setTextColor(if (enabled) green else Color.RED)
+        }
+    }
+
+    private fun openAppSettings() {
+        val intent = Intent(
+            Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+            Uri.parse("package:$packageName")
+        )
+        startActivity(intent)
     }
 
     private fun createSalesControl(): View {
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL or Gravity.END
-            setPadding(16, 9, 18, 9)
+            setPadding(dp(16), dp(9), dp(18), dp(9))
             setBackgroundColor(Color.WHITE)
         }
 
@@ -331,6 +575,7 @@ class ResellerDashboardActivity : AppCompatActivity() {
             setBackgroundColor(green)
             minWidth = dp(90)
             minHeight = dp(44)
+
             setOnClickListener {
                 Toast.makeText(
                     this@ResellerDashboardActivity,
@@ -343,7 +588,7 @@ class ResellerDashboardActivity : AppCompatActivity() {
         row.addView(
             switchPreview,
             LinearLayout.LayoutParams(dp(100), dp(48)).apply {
-                setMargins(12, 0, 0, 0)
+                setMargins(dp(12), 0, 0, 0)
             }
         )
 
@@ -354,7 +599,7 @@ class ResellerDashboardActivity : AppCompatActivity() {
         val nav = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
-            setPadding(2, 13, 2, 13)
+            setPadding(dp(2), dp(13), dp(2), dp(13))
             setBackgroundColor(Color.rgb(239, 247, 242))
         }
 
@@ -374,7 +619,7 @@ class ResellerDashboardActivity : AppCompatActivity() {
                 true
             ).apply {
                 gravity = Gravity.CENTER
-                setPadding(2, 6, 2, 6)
+                setPadding(dp(2), dp(6), dp(2), dp(6))
                 isClickable = true
                 isFocusable = true
             }
@@ -385,7 +630,9 @@ class ResellerDashboardActivity : AppCompatActivity() {
             )
         }
 
-        
+        return nav
+    }
+
     private fun validateSession(token: String) {
         Thread {
             var sessionInvalid = false
@@ -393,12 +640,13 @@ class ResellerDashboardActivity : AppCompatActivity() {
 
             try {
                 val connection = URL(
-                    "https://mpesa-auto-bundles-backend.onrender.com/api/resellers/me"
+                    "https://mpesa-auto-bundles-backend.onrender.com/api/reseller/me"
                 ).openConnection() as HttpURLConnection
 
                 connection.requestMethod = "GET"
                 connection.connectTimeout = 20000
                 connection.readTimeout = 20000
+
                 connection.setRequestProperty(
                     "Authorization",
                     "Bearer $token"
@@ -407,8 +655,8 @@ class ResellerDashboardActivity : AppCompatActivity() {
                 val code = connection.responseCode
 
                 sessionInvalid = code == 401 || code == 403
-                connectionProblem = code !in 200..299 &&
-                    !sessionInvalid
+                connectionProblem =
+                    code !in 200..299 && !sessionInvalid
 
                 connection.disconnect()
 
@@ -441,36 +689,35 @@ class ResellerDashboardActivity : AppCompatActivity() {
             }
         }.start()
     }
-    
-                connection.readTimeout = 20000
-                connection.setRequestProperty(
-                    "Authorization",
-                    "Bearer $token"
-                )
 
-                valid = connection.responseCode in 200..299
-                connection.disconnect()
-            } catch (_: Exception) {
-                valid = true
+    private fun makeText(
+        value: String,
+        size: Float,
+        color: Int,
+        bold: Boolean = false
+    ): TextView {
+        return TextView(this).apply {
+            text = value
+            textSize = size
+            setTextColor(color)
+            if (bold) {
+                setTypeface(null, android.graphics.Typeface.BOLD)
             }
+        }
+    }
 
-            runOnUiThread {
-                if (!valid) {
-                    getSharedPreferences(
-                        "reseller_session",
-                        MODE_PRIVATE
-                    ).edit().clear().apply()
+    private fun roundedBackground(
+        color: Int,
+        radius: Int
+    ): GradientDrawable {
+        return GradientDrawable().apply {
+            setColor(color)
+            cornerRadius = dp(radius).toFloat()
+        }
+    }
 
-                    Toast.makeText(
-                        this,
-                        "Your session has expired. Please log in again.",
-                        Toast.LENGTH_LONG
-                    ).show()
-
-                    goToLogin()
-                }
-            }
-        }.start()
+    private fun dp(value: Int): Int {
+        return (value * resources.displayMetrics.density).toInt()
     }
 
     private fun goToLogin() {
