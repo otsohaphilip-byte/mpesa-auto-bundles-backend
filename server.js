@@ -573,13 +573,13 @@ function clearLoginRateLimit(key) {
 }
 
 async function loginAccount(req, res, accountType) {
-  const email = String(req.body.email || "")
-    .trim()
-    .toLowerCase();
+  const identifier = accountType === "admin"
+    ? String(req.body.phone || "").trim()
+    : String(req.body.email || "").trim().toLowerCase();
 
   const password = String(req.body.password || "");
   const ip = String(req.ip || "unknown");
-  const rateKey = accountType + ":" + ip + ":" + email;
+  const rateKey = accountType + ":" + ip + ":" + identifier;
 
   if (!checkLoginRateLimit(rateKey)) {
     return sendError(
@@ -589,11 +589,13 @@ async function loginAccount(req, res, accountType) {
     );
   }
 
-  if (!email || !password) {
+  if (!identifier || !password) {
     return sendError(
       res,
       400,
-      "Enter your email address and password."
+      accountType === "admin"
+        ? "Enter your phone number and password."
+        : "Enter your email address and password."
     );
   }
 
@@ -601,16 +603,26 @@ async function loginAccount(req, res, accountType) {
     let account;
 
     if (accountType === "admin") {
-      account = await getAdminByEmail(email);
+      try {
+        normalizePhone(identifier);
+      } catch (_) {
+        return sendError(
+          res,
+          400,
+          "Enter a valid administrator phone number."
+        );
+      }
+
+      account = await getAdminByPhone(identifier);
     } else {
-      account = await getResellerByEmail(email);
+      account = await getResellerByEmail(identifier);
     }
 
     if (!account) {
       return sendError(
         res,
         401,
-        "Invalid email or password."
+        "Invalid login details."
       );
     }
 
@@ -634,34 +646,35 @@ async function loginAccount(req, res, accountType) {
       return sendError(
         res,
         401,
-        "Invalid email or password."
+        "Invalid login details."
       );
     }
 
     clearLoginRateLimit(rateKey);
 
-    const payload =
-      accountType === "admin"
-        ? {
-            role: "admin",
-            adminId: account.id,
-            email: account.email
-          }
-        : {
-            role: "reseller",
-            resellerId: account.id,
-            email: account.email,
-            name: account.name
-          };
+    const payload = accountType === "admin"
+      ? {
+          role: "admin",
+          adminId: account.id,
+          email: account.email
+        }
+      : {
+          role: "reseller",
+          resellerId: account.id,
+          email: account.email,
+          name: account.name
+        };
 
     const token = createToken(payload);
 
     return res.json({
-      status: "SUCCESS",
+      status: "OK",
+      role: accountType,
       message: "Login successful.",
       token,
       user: payload
     });
+
   } catch (error) {
     console.error("Login error:", error.message);
 
@@ -678,6 +691,10 @@ app.post("/api/admin/login", async (req, res) => {
 });
 
 app.post("/api/reseller/login", async (req, res) => {
+  return loginAccount(req, res, "reseller");
+});
+
+app.post("/api/resellers/login", async (req, res) => {
   return loginAccount(req, res, "reseller");
 });
 
