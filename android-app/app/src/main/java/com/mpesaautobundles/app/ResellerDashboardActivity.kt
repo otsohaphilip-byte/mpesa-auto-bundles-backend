@@ -171,7 +171,7 @@ class ResellerDashboardActivity : AppCompatActivity() {
         value: String,
         unit: String
     ): View {
-                val card = LinearLayout(this).apply {
+                        val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(16, 19, 12, 19)
             minimumHeight = (112 * resources.displayMetrics.density).toInt()
@@ -185,10 +185,6 @@ class ResellerDashboardActivity : AppCompatActivity() {
             }
         )
         card.addView(makeText(unit, 13f, grey))
-
-        return card
-        )
-        card.addView(makeText(unit, 12f, grey))
 
         return card
     }
