@@ -385,40 +385,11 @@ class ResellerDashboardActivity : AppCompatActivity() {
             )
         }
 
-        return nav
-    }
-
-    private fun makeText(
-        value: String,
-        size: Float,
-        color: Int,
-        bold: Boolean = false
-    ): TextView {
-        return TextView(this).apply {
-            text = value
-            textSize = size
-            setTextColor(color)
-            if (bold) setTypeface(null, Typeface.BOLD)
-        }
-    }
-
-    private fun roundedBackground(
-        color: Int,
-        radius: Int
-    ): GradientDrawable {
-        return GradientDrawable().apply {
-            setColor(color)
-            cornerRadius = dp(radius).toFloat()
-        }
-    }
-
-    private fun dp(value: Int): Int {
-        return (value * resources.displayMetrics.density).toInt()
-    }
-
+        
     private fun validateSession(token: String) {
         Thread {
-            var valid = false
+            var sessionInvalid = false
+            var connectionProblem = false
 
             try {
                 val connection = URL(
@@ -427,6 +398,50 @@ class ResellerDashboardActivity : AppCompatActivity() {
 
                 connection.requestMethod = "GET"
                 connection.connectTimeout = 20000
+                connection.readTimeout = 20000
+                connection.setRequestProperty(
+                    "Authorization",
+                    "Bearer $token"
+                )
+
+                val code = connection.responseCode
+
+                sessionInvalid = code == 401 || code == 403
+                connectionProblem = code !in 200..299 &&
+                    !sessionInvalid
+
+                connection.disconnect()
+
+            } catch (_: Exception) {
+                connectionProblem = true
+            }
+
+            runOnUiThread {
+                if (sessionInvalid) {
+                    getSharedPreferences(
+                        "reseller_session",
+                        MODE_PRIVATE
+                    ).edit().clear().apply()
+
+                    Toast.makeText(
+                        this,
+                        "Your session has expired. Please log in again.",
+                        Toast.LENGTH_LONG
+                    ).show()
+
+                    goToLogin()
+
+                } else if (connectionProblem) {
+                    Toast.makeText(
+                        this,
+                        "Could not verify your session. Check your internet connection.",
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+            }
+        }.start()
+    }
+    
                 connection.readTimeout = 20000
                 connection.setRequestProperty(
                     "Authorization",
