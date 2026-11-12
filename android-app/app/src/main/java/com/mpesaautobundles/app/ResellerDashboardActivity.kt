@@ -407,17 +407,45 @@ class ResellerDashboardActivity : AppCompatActivity() {
         }
 
         row.addView(
-            makeText(
-                "Sales control",
-                13f,
-                dark,
-                true
-            )
+            
+    private fun createSalesControl(): View {
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL or Gravity.END
+            setPadding(16, 9, 18, 9)
+            setBackgroundColor(Color.WHITE)
+        }
+
+        row.addView(
+            makeText("Sales control", 13f, dark, true)
         )
 
         val switchPreview = Button(this).apply {
             text = "ON"
-            
+            textSize = 13f
+            setTextColor(Color.WHITE)
+            setBackgroundColor(green)
+            minWidth = 90
+            minHeight = 44
+            setOnClickListener {
+                Toast.makeText(
+                    this@ResellerDashboardActivity,
+                    "Sales control is not connected yet.",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+        }
+
+        row.addView(
+            switchPreview,
+            LinearLayout.LayoutParams(
+                100,
+                48
+            ).apply {
+                setMargins(12, 0, 0, 0)
+            }
+        )
+
         return row
     }
 
@@ -463,34 +491,6 @@ class ResellerDashboardActivity : AppCompatActivity() {
         return nav
     }
     
-                    1f
-                )
-            )
-        }
-
-        return nav
-        }
-        return nav
-    }
-
-    private fun makeText(
-        value: String,
-        size: Float,
-        color: Int,
-        bold: Boolean = false
-    ): TextView {
-        return TextView(this).apply {
-            text = value
-            textSize = size
-            setTextColor(color)
-
-            if (bold) {
-                setTypeface(null, Typeface.BOLD)
-            }
-        }
-    }
-
-    private fun roundedBackground(
         color: Int,
         radius: Int
     ): GradientDrawable {
