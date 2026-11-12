@@ -417,32 +417,11 @@ class ResellerDashboardActivity : AppCompatActivity() {
 
         val switchPreview = Button(this).apply {
             text = "ON"
-            textSize = 13f
-            setTextColor(Color.WHITE)
-            setBackgroundColor(green)
-            minWidth = 90
-            minHeight = 44
-            setOnClickListener {
-                Toast.makeText(
-                    this@ResellerDashboardActivity,
-                    "Sales control is a preview. Backend control is not connected yet.",
-                    Toast.LENGTH_LONG
-                ).show()
-            }
-        }
-
-        row.addView(
-            switchPreview,
-            LinearLayout.LayoutParams(
-                100,
-                48
-            ).apply {
-                setMargins(12, 0, 0, 0)
-            }
-        )
-
+            
         return row
-        private fun createBottomNavigation(): View {
+    }
+
+    private fun createBottomNavigation(): View {
         val nav = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
@@ -476,6 +455,14 @@ class ResellerDashboardActivity : AppCompatActivity() {
                 LinearLayout.LayoutParams(
                     0,
                     (58 * resources.displayMetrics.density).toInt(),
+                    1f
+                )
+            )
+        }
+
+        return nav
+    }
+    
                     1f
                 )
             )
