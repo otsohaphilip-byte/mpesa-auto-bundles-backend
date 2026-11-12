@@ -330,22 +330,23 @@ class ResellerDashboardActivity : AppCompatActivity() {
         symbol: String,
         label: String
     ): View {
-        val card = LinearLayout(this).apply {
+                val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
-            setPadding(8, 17, 8, 17)
+            setPadding(10, 20, 10, 20)
+            minimumHeight = (104 * resources.displayMetrics.density).toInt()
             background = roundedBackground(light, 12)
             isClickable = true
             isFocusable = true
         }
 
         card.addView(
-            makeText(symbol, 25f, green, true)
+            makeText(symbol, 27f, darkGreen, true)
         )
 
         card.addView(
-            makeText(label, 13f, dark, true).apply {
-                setPadding(0, 7, 0, 0)
+            makeText(label, 14f, dark, true).apply {
+                setPadding(0, 8, 0, 0)
             }
         )
 
@@ -357,6 +358,7 @@ class ResellerDashboardActivity : AppCompatActivity() {
             ).show()
         }
 
+        return card
         return card
     }
 
