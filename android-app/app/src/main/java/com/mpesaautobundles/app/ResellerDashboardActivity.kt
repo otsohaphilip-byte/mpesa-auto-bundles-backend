@@ -326,11 +326,11 @@ class ResellerDashboardActivity : AppCompatActivity() {
         return section
     }
 
-    private fun actionCard(
+        private fun actionCard(
         symbol: String,
         label: String
     ): View {
-                val card = LinearLayout(this).apply {
+        val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
             setPadding(10, 20, 10, 20)
@@ -359,8 +359,7 @@ class ResellerDashboardActivity : AppCompatActivity() {
         }
 
         return card
-        return card
-    }
+        }
 
     private fun createRecentTransactions(): View {
         val section = LinearLayout(this).apply {
