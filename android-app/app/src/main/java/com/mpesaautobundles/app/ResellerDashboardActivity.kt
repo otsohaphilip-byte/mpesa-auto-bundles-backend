@@ -442,14 +442,12 @@ class ResellerDashboardActivity : AppCompatActivity() {
         )
 
         return row
-    }
-
-    private fun createBottomNavigation(): View {
+        private fun createBottomNavigation(): View {
         val nav = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
-            setPadding(2, 10, 2, 10)
-            setBackgroundColor(Color.rgb(250, 250, 250))
+            setPadding(2, 13, 2, 13)
+            setBackgroundColor(Color.rgb(239, 247, 242))
         }
 
         val items = listOf(
@@ -463,24 +461,28 @@ class ResellerDashboardActivity : AppCompatActivity() {
         for (item in items) {
             val tab = makeText(
                 item,
-                11f,
-                if (item.startsWith("⌂")) green else grey,
+                12f,
+                if (item.startsWith("⌂")) darkGreen else grey,
                 true
             ).apply {
                 gravity = Gravity.CENTER
-                setPadding(2, 4, 2, 4)
+                setPadding(2, 6, 2, 6)
+                isClickable = true
+                isFocusable = true
             }
 
             nav.addView(
                 tab,
                 LinearLayout.LayoutParams(
                     0,
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    (58 * resources.displayMetrics.density).toInt(),
                     1f
                 )
             )
         }
 
+        return nav
+        }
         return nav
     }
 
