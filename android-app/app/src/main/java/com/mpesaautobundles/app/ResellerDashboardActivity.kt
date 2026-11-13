@@ -595,7 +595,7 @@ class ResellerDashboardActivity : AppCompatActivity() {
         return row
     }
 
-    private fun createBottomNavigation(): View {
+        private fun createBottomNavigation(): View {
         val nav = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
@@ -622,6 +622,20 @@ class ResellerDashboardActivity : AppCompatActivity() {
                 setPadding(dp(2), dp(6), dp(2), dp(6))
                 isClickable = true
                 isFocusable = true
+
+                setOnClickListener {
+                    val section = item.substringAfter("\n")
+
+                    if (section != "Home") {
+                        val intent = Intent(
+                            this@ResellerDashboardActivity,
+                            DashboardSectionActivity::class.java
+                        )
+                        intent.putExtra("section", section)
+                        intent.putExtra("role", "reseller")
+                        startActivity(intent)
+                    }
+                }
             }
 
             nav.addView(
@@ -631,7 +645,7 @@ class ResellerDashboardActivity : AppCompatActivity() {
         }
 
         return nav
-    }
+        }
 
     private fun validateSession(token: String) {
         Thread {
