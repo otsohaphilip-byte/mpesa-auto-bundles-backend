@@ -33,6 +33,9 @@
 
         <activity
             android:name=".AdminDashboardActivity"
+                    <activity
+            android:name=".DashboardSectionActivity"
+            android:exported="false" />
             android:exported="false" />
 
         <activity
