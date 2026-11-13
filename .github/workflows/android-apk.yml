@@ -14,7 +14,6 @@ jobs:
 
     steps:
       - name: Get source code
-              - name: Get Android source code
         uses: actions/checkout@v4
         with:
           ref: android-app
