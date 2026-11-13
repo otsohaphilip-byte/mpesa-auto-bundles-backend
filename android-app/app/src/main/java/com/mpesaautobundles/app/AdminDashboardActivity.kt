@@ -426,6 +426,7 @@ class AdminDashboardActivity : AppCompatActivity() {
         return row
     }
 
+    
     private fun createBottomNavigation(): View {
         val nav = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -443,16 +444,34 @@ class AdminDashboardActivity : AppCompatActivity() {
         )
 
         for (item in items) {
+            val tab = makeText(
+                item,
+                11f,
+                if (item.startsWith("⌂")) green else grey,
+                true
+            ).apply {
+                gravity = Gravity.CENTER
+                setPadding(2, 4, 2, 4)
+                isClickable = true
+                isFocusable = true
+
+                setOnClickListener {
+                    val section = item.substringAfter("\n")
+
+                    if (section != "Home") {
+                        val intent = Intent(
+                            this@AdminDashboardActivity,
+                            DashboardSectionActivity::class.java
+                        )
+                        intent.putExtra("section", section)
+                        intent.putExtra("role", "admin")
+                        startActivity(intent)
+                    }
+                }
+            }
+
             nav.addView(
-                makeText(
-                    item,
-                    11f,
-                    if (item.startsWith("⌂")) green else grey,
-                    true
-                ).apply {
-                    gravity = Gravity.CENTER
-                    setPadding(2, 4, 2, 4)
-                },
+                tab,
                 LinearLayout.LayoutParams(
                     0,
                     LinearLayout.LayoutParams.WRAP_CONTENT,
@@ -463,6 +482,7 @@ class AdminDashboardActivity : AppCompatActivity() {
 
         return nav
     }
+    
 
     private fun makeText(
         value: String,
