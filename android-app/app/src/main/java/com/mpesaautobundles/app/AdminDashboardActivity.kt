@@ -309,7 +309,8 @@ class AdminDashboardActivity : AppCompatActivity() {
             nav.addView(tab, LinearLayout.LayoutParams(
                 0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f
             ))
-                        }
+                        ))
+        }
         return nav
     }
 
@@ -318,17 +319,14 @@ class AdminDashboardActivity : AppCompatActivity() {
             try {
                 val connection = openConnection("/api/system/sales-status")
                 val code = connection.responseCode
-
                 val stream = if (code in 200..299) {
                     connection.inputStream
                 } else {
                     connection.errorStream
                 }
-
                 val body = stream?.bufferedReader()?.use {
                     it.readText()
                 } ?: ""
-
                 connection.disconnect()
 
                 if (code !in 200..299) {
@@ -339,13 +337,11 @@ class AdminDashboardActivity : AppCompatActivity() {
                 val paused = response.optBoolean("salesPaused", false)
 
                 runOnUiThread {
-                    if (paused) {
-                        salesIndicator.text = "INACTIVE"
-                        salesIndicator.setTextColor(Color.RED)
-                    } else {
-                        salesIndicator.text = "ACTIVE"
-                        salesIndicator.setTextColor(green)
-                    }
+                    salesIndicator.text =
+                        if (paused) "INACTIVE" else "ACTIVE"
+                    salesIndicator.setTextColor(
+                        if (paused) Color.RED else green
+                    )
                 }
             } catch (e: Exception) {
                 runOnUiThread {
@@ -355,8 +351,7 @@ class AdminDashboardActivity : AppCompatActivity() {
             }
         }.start()
     }
-        return nav
-    }
+ 
 
     private fun loadDashboard() {
         Thread {
