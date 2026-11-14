@@ -370,6 +370,13 @@ async function runDatabaseMigrations() {
 
     ALTER TABLE payments
       ADD COLUMN IF NOT EXISTS payer_phone VARCHAR(20);
+          ALTER TABLE offers
+      ADD COLUMN IF NOT EXISTS source_offer_id BIGINT
+        REFERENCES offers(id);
+
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_offers_reseller_source_unique
+      ON offers(reseller_id, source_offer_id)
+      WHERE reseller_id IS NOT NULL AND source_offer_id IS NOT NULL;
   `);
 }
 
