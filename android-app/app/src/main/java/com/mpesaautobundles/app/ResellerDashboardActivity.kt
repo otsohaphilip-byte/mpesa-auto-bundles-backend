@@ -699,7 +699,7 @@ class ResellerDashboardActivity : AppCompatActivity() {
                         .bufferedReader().use { it.readText() }
                         .replace(" ", "")
 
-                    paused = body.contains("\"salesPaused\":true")
+                    paused = body.contains("\"sales_paused\":true")
                 }
 
                 connection.disconnect()
