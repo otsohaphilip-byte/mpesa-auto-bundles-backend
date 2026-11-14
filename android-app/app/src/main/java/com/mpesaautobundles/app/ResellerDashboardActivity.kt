@@ -361,6 +361,72 @@ root.addView(createBottomNavigation())
 
         return section
     }
+        private fun loadAgentDeviceStatus() {
+    val token = getSharedPreferences(
+        "reseller_session",
+        MODE_PRIVATE
+    ).getString("token", null)
+
+    if (token.isNullOrBlank()) return
+
+    agentDeviceStatus.text = "Loading agent SIM status..."
+
+    Thread {
+        var result = "Unable to load agent SIM status."
+
+        try {
+            val connection = URL(
+                "https://mpesa-auto-bundles-backend.onrender.com/api/reseller/ussd/device"
+            ).openConnection() as HttpURLConnection
+
+            connection.requestMethod = "GET"
+            connection.connectTimeout = 20000
+            connection.readTimeout = 20000
+            connection.setRequestProperty(
+                "Authorization",
+                "Bearer $token"
+            )
+
+            if (connection.responseCode in 200..299) {
+                val body = connection.inputStream
+                    .bufferedReader()
+                    .use { it.readText() }
+
+                val response = JSONObject(body)
+                val device = response.optJSONObject("device")
+
+                result = if (device == null) {
+                    "No agent SIM registered."
+                } else {
+                    val name = device.optString("device_name")
+                    val phone = device.optString("phone")
+                    val status = device.optString(
+                        "status",
+                        "offline"
+                    ).uppercase()
+
+                    val balance = if (
+                        !device.isNull("airtime_balance")
+                    ) {
+                        " | Airtime: KES ${device.opt("airtime_balance")}"
+                    } else {
+                        " | Airtime: Not reported"
+                    }
+
+                    "$name | $phone | $status$balance"
+                }
+            }
+
+            connection.disconnect()
+        } catch (_: Exception) {
+            result = "Could not load agent SIM status."
+        }
+
+        runOnUiThread {
+            agentDeviceStatus.text = result
+        }
+    }.start()
+        }
     private fun showAgentRegistrationDialog() {
         val phoneInput = EditText(this).apply {
             hint = "Safaricom agent SIM number (07XXXXXXXX)"
