@@ -2106,6 +2106,86 @@ app.get(
   }
 );
 
+app.post(
+  "/api/reseller/ussd/device",
+  authenticateToken,
+  requireReseller,
+  async (req, res) => {
+    const deviceName = String(
+      req.body.device_name || "Safaricom Bingwa Gateway"
+    ).trim();
+
+    if (deviceName.length > 150) {
+      return sendError(res, 400, "Device name is too long.");
+    }
+
+    let phone;
+
+    try {
+      phone = normalizePhone(req.body.phone);
+    } catch (error) {
+      return sendError(res, 400, error.message);
+    }
+
+    const deviceToken = crypto.randomBytes(32).toString("hex");
+    const client = await pool.connect();
+
+    try {
+      await client.query("BEGIN");
+
+      await client.query(
+        "SELECT pg_advisory_xact_lock($1::bigint)",
+        [req.user.resellerId]
+      );
+
+      const existing = await client.query(
+        `SELECT id FROM ussd_devices
+         WHERE reseller_id = $1
+         ORDER BY id DESC LIMIT 1`,
+        [req.user.resellerId]
+      );
+
+      let result;
+
+      if (existing.rows.length) {
+        result = await client.query(
+          `UPDATE ussd_devices
+           SET device_name = $1, phone = $2,
+               device_token = $3, status = 'offline',
+               airtime_balance = NULL,
+               balance_updated_at = NULL,
+               last_seen = NULL
+           WHERE id = $4
+           RETURNING id, device_name, phone, status`,
+          [deviceName, phone, deviceToken, existing.rows[0].id]
+        );
+      } else {
+        result = await client.query(
+          `INSERT INTO ussd_devices
+           (reseller_id, device_name, phone, device_token)
+           VALUES ($1, $2, $3, $4)
+           RETURNING id, device_name, phone, status`,
+          [req.user.resellerId, deviceName, phone, deviceToken]
+        );
+      }
+
+      await client.query("COMMIT");
+
+      return res.status(201).json({
+        status: "SUCCESS",
+        message: "Gateway device registered.",
+        device: result.rows[0],
+        device_token: deviceToken
+      });
+    } catch (error) {
+      await client.query("ROLLBACK");
+      console.error("Gateway registration error:", error.message);
+      return sendError(res, 500, "Unable to register gateway device.");
+    } finally {
+      client.release();
+    }
+  }
+);
 app.get(
   "/api/reseller/ussd/device",
   authenticateToken,
