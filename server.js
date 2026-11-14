@@ -2027,8 +2027,7 @@ app.patch(
   }
 );
 
-async function startServer() {
-  app.post("/api/ussd/agent/balance", async (req, res) => {
+app.post("/api/ussd/agent/balance", async (req, res) => {
   const deviceToken = String(
     req.headers["x-device-token"] || ""
   ).trim();
@@ -2076,7 +2075,8 @@ async function startServer() {
     return sendError(res, 500, "Unable to update agent balance.");
   }
 });
-  try {
+
+async function startServer() {
     await initializeDatabase();
 
     await installOperations(
