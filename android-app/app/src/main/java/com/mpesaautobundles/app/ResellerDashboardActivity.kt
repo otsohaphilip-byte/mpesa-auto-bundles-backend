@@ -569,17 +569,18 @@ root.addView(createBottomNavigation())
                 message = "Network error. Please try again."
             }
 
-            runOnUiThread {
-                             agentDeviceStatus.text =
+                        runOnUiThread {
+                agentDeviceStatus.text =
                     if (success) "Registered: $phone" else message
 
-                if (success) loadAgentDeviceStatus()   
+                if (success) loadAgentDeviceStatus()
 
+                Toast.makeText(
                     this,
                     message,
                     Toast.LENGTH_LONG
                 ).show()
-            }
+                        }
         }.start()
     }
 
