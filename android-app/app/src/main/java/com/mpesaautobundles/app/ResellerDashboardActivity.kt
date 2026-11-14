@@ -727,6 +727,7 @@ class ResellerDashboardActivity : AppCompatActivity() {
                         salesIndicator.setTextColor(grey)
                         salesToggleButton.text = "UNAVAILABLE"
                         salesToggleButton.setBackgroundColor(grey)
+                        salesToggleButton.isEnabled = false
                     }
                 }
                             }
