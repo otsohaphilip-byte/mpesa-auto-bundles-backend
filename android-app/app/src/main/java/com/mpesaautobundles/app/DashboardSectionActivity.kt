@@ -270,6 +270,16 @@ class DashboardSectionActivity : Activity() {
                 statusText.text =
                     "${offers.length()} offers found"
                 content.removeAllViews()
+                                if (role == "reseller") {
+                    val addOfferButton = Button(this).apply {
+                        text = "+ Add Your Own Offer"
+                        textSize = 17f
+                        setOnClickListener {
+                            showAddOfferDialog()
+                        }
+                    }
+                    content.addView(addOfferButton)
+                                }
 
                 if (offers.length() == 0) {
                     content.addView(makeText(
