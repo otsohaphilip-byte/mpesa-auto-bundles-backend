@@ -653,7 +653,55 @@ class ResellerDashboardActivity : AppCompatActivity() {
 
         return nav
         }
+    private fun loadSalesStatus(token: String) {
+        Thread {
+            var paused: Boolean? = null
 
+            try {
+                val connection = URL(
+                    "https://mpesa-auto-bundles-backend.onrender.com/api/reseller/sales-status"
+                ).openConnection() as HttpURLConnection
+
+                connection.requestMethod = "GET"
+                connection.connectTimeout = 20000
+                connection.readTimeout = 20000
+                connection.setRequestProperty(
+                    "Authorization",
+                    "Bearer $token"
+                )
+
+                if (connection.responseCode in 200..299) {
+                    val body = connection.inputStream
+                        .bufferedReader().use { it.readText() }
+                        .replace(" ", "")
+
+                    paused = body.contains("\"salesPaused\":true")
+                }
+
+                connection.disconnect()
+
+            } catch (_: Exception) {
+                paused = null
+            }
+
+            runOnUiThread {
+                when (paused) {
+                    true -> {
+                        salesIndicator.text = "INACTIVE"
+                        salesIndicator.setTextColor(Color.RED)
+                    }
+                    false -> {
+                        salesIndicator.text = "ACTIVE"
+                        salesIndicator.setTextColor(green)
+                    }
+                    null -> {
+                        salesIndicator.text = "UNAVAILABLE"
+                        salesIndicator.setTextColor(grey)
+                    }
+                }
+            }
+        }.start()
+    }
     private fun validateSession(token: String) {
         Thread {
             var sessionInvalid = false
