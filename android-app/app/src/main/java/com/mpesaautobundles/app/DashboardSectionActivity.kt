@@ -550,14 +550,22 @@ class DashboardSectionActivity : Activity() {
         private fun loadSettings() {
         heading.text = "Settings"
 
-        runRequest {
-            val response = request("/api/system/sales-status")
+                runRequest {
+            val isAdmin = role == "admin"
 
-            // Backend returns salesPaused, not paused.
-            val paused = response.optBoolean(
-                "salesPaused",
-                false
-            )
+            val path = if (isAdmin) {
+                "/api/system/sales-status"
+            } else {
+                "/api/reseller/sales-status"
+            }
+
+            val response = request(path)
+
+            val paused = if (isAdmin) {
+                response.optBoolean("salesPaused", false)
+            } else {
+                response.optBoolean("sales_paused", false)
+            }
 
             runOnUiThread {
                 loading.visibility = View.GONE
