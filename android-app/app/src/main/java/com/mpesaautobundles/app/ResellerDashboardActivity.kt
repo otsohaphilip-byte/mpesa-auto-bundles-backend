@@ -677,7 +677,6 @@ class ResellerDashboardActivity : AppCompatActivity() {
 
         return nav
         }
-    paused = body.contains("\"sales_paused\":true")
         Thread {
             var paused: Boolean? = null
 
