@@ -261,9 +261,11 @@ async function createFulfilmentTables() {
       phone VARCHAR(20),
       device_token TEXT UNIQUE,
       status VARCHAR(30) NOT NULL DEFAULT 'offline',
+            device_token TEXT UNIQUE,
+      status VARCHAR(30) NOT NULL DEFAULT 'offline',
+      airtime_balance NUMERIC(12,2),
+      balance_updated_at TIMESTAMPTZ,
       last_seen TIMESTAMPTZ,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
 
     CREATE TABLE IF NOT EXISTS ussd_templates (
       id BIGSERIAL PRIMARY KEY,
