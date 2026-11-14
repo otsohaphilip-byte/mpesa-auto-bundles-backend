@@ -310,8 +310,7 @@ class ResellerDashboardActivity : AppCompatActivity() {
         return section
     }
 
-    private fun actionCard(
-            private fun createAgentSimSection(): View {
+        private fun createAgentSimSection(): View {
         val section = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(0, dp(22), 0, dp(10))
@@ -363,7 +362,9 @@ class ResellerDashboardActivity : AppCompatActivity() {
         section.addView(card)
 
         return section
-            }
+    }
+
+    private fun actionCard(
         symbol: String,
         label: String
     ): View {
@@ -385,7 +386,7 @@ class ResellerDashboardActivity : AppCompatActivity() {
             }
         )
 
-                card.setOnClickListener {
+        card.setOnClickListener {
             if (label == "My Offers") {
                 val intent = Intent(
                     this,
@@ -401,7 +402,8 @@ class ResellerDashboardActivity : AppCompatActivity() {
                     Toast.LENGTH_SHORT
                 ).show()
             }
-                }
+        }
+
         return card
     }
 
