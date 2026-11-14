@@ -327,14 +327,23 @@ class ResellerDashboardActivity : AppCompatActivity() {
             }
         )
 
-        card.setOnClickListener {
-            Toast.makeText(
-                this,
-                "$label is not connected yet.",
-                Toast.LENGTH_SHORT
-            ).show()
-        }
-
+                card.setOnClickListener {
+            if (label == "My Offers") {
+                val intent = Intent(
+                    this,
+                    DashboardSectionActivity::class.java
+                )
+                intent.putExtra("section", "My Offers")
+                intent.putExtra("role", "reseller")
+                startActivity(intent)
+            } else {
+                Toast.makeText(
+                    this,
+                    "$label is not connected yet.",
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
+                }
         return card
     }
 
