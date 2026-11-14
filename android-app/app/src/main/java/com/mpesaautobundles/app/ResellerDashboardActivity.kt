@@ -677,7 +677,7 @@ class ResellerDashboardActivity : AppCompatActivity() {
 
         return nav
         }
-    private fun loadSalesStatus(token: String) {
+    paused = body.contains("\"sales_paused\":true")
         Thread {
             var paused: Boolean? = null
 
