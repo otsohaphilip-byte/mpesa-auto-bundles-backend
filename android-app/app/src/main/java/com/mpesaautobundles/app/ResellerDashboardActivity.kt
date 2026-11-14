@@ -77,23 +77,20 @@ class ResellerDashboardActivity : AppCompatActivity() {
             makeText(
                 "Here is your business overview.",
                 14f,
-                grey
-            )
-            content.addView(createAgentSimSection())
-        )
+                content.addView(
+    makeText(
+        "Here is your business overview.",
+        14f,
+        grey
+    )
+)
 
-        content.addView(createStatsGrid())
-        content.addView(createCommissionSection())
-        content.addView(createQuickActions())
-        content.addView(createRecentTransactions())
-        content.addView(createPermissionSection())
-
-        scroll.addView(content)
-
-        root.addView(
-            scroll,
-            LinearLayout.LayoutParams(
-                -1,
+content.addView(createStatsGrid())
+content.addView(createCommissionSection())
+content.addView(createQuickActions())
+content.addView(createAgentSimSection())
+content.addView(createRecentTransactions())
+content.addView(createPermissionSection())
                 0,
                 1f
             )
