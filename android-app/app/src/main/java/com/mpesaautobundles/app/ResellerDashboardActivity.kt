@@ -51,17 +51,13 @@ class ResellerDashboardActivity : AppCompatActivity() {
         if (token.isNullOrBlank()) {
             goToLogin()
             return
-        }
-
-        val root = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setBackgroundColor(Color.WHITE)
-        }
-
-        val scroll = ScrollView(this)
-
-        val content = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
+                content.addView(
+            makeText(
+                "Here is your business overview.",
+                14f,
+                grey
+            )
+        )
             setPadding(dp(18), dp(18), dp(18), dp(20))
         }
 
