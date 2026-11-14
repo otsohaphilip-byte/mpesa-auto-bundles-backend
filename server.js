@@ -26,7 +26,7 @@ app.use((req, res, next) => {
   );
   res.header(
     "Access-Control-Allow-Headers",
-    "Content-Type, x-test-key, Authorization"
+    "Content-Type, x-test-key, Authorization, x-device-token"
   );
 
   if (req.method === "OPTIONS") {
