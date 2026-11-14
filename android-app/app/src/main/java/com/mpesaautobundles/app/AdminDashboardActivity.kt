@@ -297,10 +297,15 @@ class AdminDashboardActivity : AppCompatActivity() {
                     button.isEnabled = true
                 }
             } catch (e: Exception) {
-                runOnUiThread {
-                    button.text = "Retry"
-                    button.isEnabled = true
-                }
+                                runOnUiThread {
+                    button.text = "Unavailable"
+                    button.isEnabled = false
+                    Toast.makeText(
+                        this,
+                        "Could not load sales status. Reopen the dashboard to try again.",
+                        Toast.LENGTH_LONG
+                    ).show()
+                                }
             }
         }.start()
 
