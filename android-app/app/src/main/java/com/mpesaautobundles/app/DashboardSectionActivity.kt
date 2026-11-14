@@ -714,8 +714,8 @@ class DashboardSectionActivity : Activity() {
     }
 
     private fun loadTillIntoFields(
-        tillInput: EditText,
-        phoneInput: EditText
+                    val till = settings.optString("admin_buy_goods_till", "")
+            val phone = settings.optString("admin_till_phone", "")
     ) {
         runRequest {
             val response = request("/api/admin/settings/till")
