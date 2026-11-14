@@ -701,6 +701,60 @@ class ResellerDashboardActivity : AppCompatActivity() {
                     }
                 }
             }
+                private fun updateResellerSalesStatus(
+        token: String,
+        paused: Boolean
+    ) {
+        Thread {
+            var success = false
+
+            try {
+                val connection = URL(
+                    "https://mpesa-auto-bundles-backend.onrender.com/api/reseller/sales-status"
+                ).openConnection() as HttpURLConnection
+
+                connection.requestMethod = "PATCH"
+                connection.connectTimeout = 20000
+                connection.readTimeout = 20000
+                connection.doOutput = true
+
+                connection.setRequestProperty(
+                    "Authorization",
+                    "Bearer $token"
+                )
+                connection.setRequestProperty(
+                    "Content-Type",
+                    "application/json"
+                )
+
+                connection.outputStream.use {
+                    it.write(
+                        """{"paused":$paused}""".toByteArray()
+                    )
+                }
+
+                success = connection.responseCode in 200..299
+                connection.disconnect()
+
+            } catch (_: Exception) {
+                success = false
+            }
+
+            runOnUiThread {
+                if (success) {
+                    loadSalesStatus(token)
+                } else {
+                    Toast.makeText(
+                        this,
+                        "Could not update your sales status.",
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+
+                salesToggleButton.isEnabled = true
+            }
+        }.start()
+                }
         }.start()
     }
     private fun validateSession(token: String) {
