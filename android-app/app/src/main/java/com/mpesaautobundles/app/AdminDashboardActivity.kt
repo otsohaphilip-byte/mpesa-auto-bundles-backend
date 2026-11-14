@@ -80,7 +80,7 @@ class AdminDashboardActivity : AppCompatActivity() {
         setContentView(root)
         loadDashboard()
     }
-
+        loadSalesStatus()
     private fun createHeader(): View {
         val header = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
