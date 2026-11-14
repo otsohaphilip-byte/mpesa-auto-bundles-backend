@@ -1944,7 +1944,46 @@ app.patch(
     }
   }
 );
+app.get(
+  "/api/reseller/sales-status",
+  authenticateToken,
+  requireReseller,
+  async (req, res) => {
+    try {
+      const result = await pool.query(
+        `SELECT sales_paused
+         FROM resellers
+         WHERE id = $1
+         LIMIT 1`,
+        [req.user.resellerId]
+      );
 
+      if (!result.rows.length) {
+        return sendError(
+          res,
+          404,
+          "Reseller account not found."
+        );
+      }
+
+      return res.json({
+        status: "SUCCESS",
+        sales_paused: result.rows[0].sales_paused
+      });
+    } catch (error) {
+      console.error(
+        "Load reseller sales status error:",
+        error.message
+      );
+
+      return sendError(
+        res,
+        500,
+        "Unable to load sales status."
+      );
+    }
+  }
+);
 app.patch(
   "/api/reseller/sales-status",
   authenticateToken,
