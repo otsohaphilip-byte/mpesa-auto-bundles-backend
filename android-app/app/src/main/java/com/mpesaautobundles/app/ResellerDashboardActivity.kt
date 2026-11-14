@@ -67,6 +67,7 @@ class ResellerDashboardActivity : AppCompatActivity() {
         }
 
         content.addView(createHeader())
+        content.addView(createSalesControl())
 
         content.addView(
             makeText("Welcome back!", 25f, dark, true).apply {
