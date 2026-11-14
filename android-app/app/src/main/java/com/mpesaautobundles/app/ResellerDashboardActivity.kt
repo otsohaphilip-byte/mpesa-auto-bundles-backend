@@ -31,7 +31,7 @@ class ResellerDashboardActivity : AppCompatActivity() {
     private val light = Color.rgb(239, 247, 242)
 
     private val permissionViews = mutableMapOf<String, TextView>()
-
+    private lateinit var salesIndicator: TextView
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
