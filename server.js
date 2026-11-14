@@ -2028,6 +2028,54 @@ app.patch(
 );
 
 async function startServer() {
+  app.post("/api/ussd/agent/balance", async (req, res) => {
+  const deviceToken = String(
+    req.headers["x-device-token"] || ""
+  ).trim();
+
+  const balance = Number(req.body.airtime_balance);
+
+  if (!deviceToken) {
+    return sendError(res, 401, "Device authentication required.");
+  }
+
+  if (
+    !Number.isFinite(balance) ||
+    balance < 0 ||
+    !/^\d+(\.\d{1,2})?$/.test(
+      String(req.body.airtime_balance)
+    )
+  ) {
+    return sendError(res, 400, "Invalid airtime balance.");
+  }
+
+  try {
+    const result = await pool.query(
+      `UPDATE ussd_devices
+       SET airtime_balance = $1,
+           balance_updated_at = NOW(),
+           last_seen = NOW(),
+           status = 'online'
+       WHERE device_token = $2
+       RETURNING id, reseller_id, phone,
+                 airtime_balance, balance_updated_at`,
+      [balance, deviceToken]
+    );
+
+    if (!result.rows.length) {
+      return sendError(res, 401, "Invalid device credentials.");
+    }
+
+    return res.json({
+      status: "SUCCESS",
+      message: "Agent SIM balance updated.",
+      device: result.rows[0]
+    });
+  } catch (error) {
+    console.error("Agent balance update error:", error.message);
+    return sendError(res, 500, "Unable to update agent balance.");
+  }
+});
   try {
     await initializeDatabase();
 
