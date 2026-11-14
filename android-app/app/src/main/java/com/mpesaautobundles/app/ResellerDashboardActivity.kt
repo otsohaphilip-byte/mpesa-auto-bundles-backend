@@ -571,6 +571,7 @@ root.addView(createBottomNavigation())
 
             runOnUiThread {
                 agentDeviceStatus.text =
+                                if (success) loadAgentDeviceStatus()
                     if (success) "Registered: $phone" else message
 
                 Toast.makeText(
