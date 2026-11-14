@@ -713,9 +713,9 @@ class DashboardSectionActivity : Activity() {
         loadTillIntoFields(tillInput, phoneInput)
     }
 
-    private fun loadTillIntoFields(
-                    val till = settings.optString("admin_buy_goods_till", "")
-            val phone = settings.optString("admin_till_phone", "")
+        private fun loadTillIntoFields(
+        tillInput: EditText,
+        phoneInput: EditText
     ) {
         runRequest {
             val response = request("/api/admin/settings/till")
@@ -723,8 +723,8 @@ class DashboardSectionActivity : Activity() {
                 ?: response.optJSONObject("till")
                 ?: response
 
-            val till = settings.optString("buyGoodsTill", "")
-            val phone = settings.optString("tillPhone", "")
+            val till = settings.optString("admin_buy_goods_till", "")
+            val phone = settings.optString("admin_till_phone", "")
 
             runOnUiThread {
                 if (till.isNotBlank() && till != "null") {
@@ -735,8 +735,7 @@ class DashboardSectionActivity : Activity() {
                 }
             }
         }
-    }
-
+        }
     private fun loadNotifications() {
         heading.text = "Notifications"
 
