@@ -93,6 +93,10 @@ class AdminDashboardActivity : AppCompatActivity() {
         brand.addView(makeText("⚡", 34f, yellow, true))
         brand.addView(makeText("M-PESA AUTO BUNDLES", 16f, green, true))
         header.addView(brand, LinearLayout.LayoutParams(0, 55, 1f))
+                salesIndicator = makeText("CHECKING", 12f, yellow, true).apply {
+            setPadding(8, 8, 8, 8)
+        }
+        header.addView(salesIndicator)
         header.addView(makeText("♧", 27f, green, true).apply {
             gravity = Gravity.CENTER
         })
