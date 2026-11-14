@@ -257,24 +257,12 @@ class ResellerDashboardActivity : AppCompatActivity() {
                 column,
                 LinearLayout.LayoutParams(0, -2, 1f)
             )
-        card.setOnClickListener {
-    if (label == "My Offers") {
-        val intent = Intent(
-            this,
-            DashboardSectionActivity::class.java
-        )
-        intent.putExtra("section", "My Offers")
-        intent.putExtra("role", "reseller")
-        startActivity(intent)
-    } else {
-        Toast.makeText(
-            this,
-            "$label is not connected yet.",
-            Toast.LENGTH_SHORT
-        ).show()
-    }
+                )
+
         }
-            ).apply {
+
+        card.addView(
+            graph.apply {
                 setPadding(0, dp(12), 0, 0)
             }
         )
