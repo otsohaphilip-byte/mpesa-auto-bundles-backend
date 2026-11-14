@@ -551,12 +551,17 @@ class DashboardSectionActivity : Activity() {
         content.addView(card)
     }
 
-    private fun loadSettings() {
+        private fun loadSettings() {
         heading.text = "Settings"
 
         runRequest {
             val response = request("/api/system/sales-status")
-            val paused = response.optBoolean("paused", false)
+
+            // Backend returns salesPaused, not paused.
+            val paused = response.optBoolean(
+                "salesPaused",
+                false
+            )
 
             runOnUiThread {
                 loading.visibility = View.GONE
@@ -564,10 +569,12 @@ class DashboardSectionActivity : Activity() {
                 content.removeAllViews()
 
                 val card = makeCard()
+
                 card.addView(makeText(
                     "Sales status",
                     19f, dark, true
                 ))
+
                 card.addView(makeText(
                     if (paused) "Currently INACTIVE"
                     else "Currently ACTIVE",
@@ -575,18 +582,24 @@ class DashboardSectionActivity : Activity() {
                     if (paused) Color.RED else green,
                     true
                 ))
+
                 card.addView(makeText(
                     "This changes the sales status setting. It does not yet guarantee that payment processing is blocked.",
                     14f, grey
                 ))
 
                 val button = Button(this).apply {
-                    text = if (paused) "Set Sales ACTIVE"
-                        else "Set Sales INACTIVE"
+                    text = if (paused) {
+                        "Set Sales ACTIVE"
+                    } else {
+                        "Set Sales INACTIVE"
+                    }
+
                     setOnClickListener {
                         updateSalesStatus(!paused, this)
                     }
                 }
+
                 card.addView(button)
                 content.addView(card)
 
@@ -595,7 +608,7 @@ class DashboardSectionActivity : Activity() {
                 }
             }
         }
-    }
+        }
 
     private fun updateSalesStatus(
         paused: Boolean,
