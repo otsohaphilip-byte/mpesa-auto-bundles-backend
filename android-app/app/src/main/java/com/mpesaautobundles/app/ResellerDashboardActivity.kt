@@ -349,7 +349,9 @@ class ResellerDashboardActivity : AppCompatActivity() {
             text = "REGISTER AGENT SIM"
             setTextColor(Color.WHITE)
             setBackgroundColor(green)
-            setOnClickListener {
+                        setOnClickListener {
+                showAgentRegistrationDialog()
+                        }
                 Toast.makeText(
                     this@ResellerDashboardActivity,
                     "Agent SIM registration will be connected next.",
@@ -362,6 +364,159 @@ class ResellerDashboardActivity : AppCompatActivity() {
         section.addView(card)
 
         return section
+    }
+    private fun showAgentRegistrationDialog() {
+        val phoneInput = EditText(this).apply {
+            hint = "Safaricom agent SIM number (07XXXXXXXX)"
+            inputType = InputType.TYPE_CLASS_PHONE
+        }
+
+        val nameInput = EditText(this).apply {
+            hint = "Device name"
+            setText("Safaricom Bingwa Gateway")
+        }
+
+        val layout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(10), dp(20), 0)
+            addView(phoneInput)
+            addView(nameInput)
+        }
+
+        AlertDialog.Builder(this)
+            .setTitle("Register Bingwa Agent SIM")
+            .setMessage("Enter the Safaricom number installed in this gateway phone.")
+            .setView(layout)
+            .setNegativeButton("CANCEL", null)
+            .setPositiveButton("REGISTER", null)
+            .create()
+            .apply {
+                setOnShowListener {
+                    getButton(AlertDialog.BUTTON_POSITIVE)
+                        .setOnClickListener {
+                            val phone = phoneInput.text.toString().trim()
+                            val deviceName = nameInput.text.toString().trim()
+
+                            if (!phone.matches(Regex("^(07|01)\\d{8}$"))) {
+                                phoneInput.error = "Enter a valid Kenyan number"
+                                return@setOnClickListener
+                            }
+
+                            if (deviceName.isBlank()) {
+                                nameInput.error = "Enter a device name"
+                                return@setOnClickListener
+                            }
+
+                            dismiss()
+                            registerAgentDevice(phone, deviceName)
+                        }
+                }
+                show()
+            }
+    }
+
+    private fun registerAgentDevice(phone: String, deviceName: String) {
+        val token = getSharedPreferences(
+            "reseller_session",
+            MODE_PRIVATE
+        ).getString("token", null)
+
+        if (token.isNullOrBlank()) {
+            goToLogin()
+            return
+        }
+
+        agentDeviceStatus.text = "Registering..."
+
+        Thread {
+            var message = "Unable to register agent SIM."
+            var success = false
+
+            try {
+                val connection = URL(
+                    "https://mpesa-auto-bundles-backend.onrender.com/api/reseller/ussd/device"
+                ).openConnection() as HttpURLConnection
+
+                connection.requestMethod = "POST"
+                connection.connectTimeout = 20000
+                connection.readTimeout = 20000
+                connection.doOutput = true
+
+                connection.setRequestProperty(
+                    "Authorization",
+                    "Bearer $token"
+                )
+                connection.setRequestProperty(
+                    "Content-Type",
+                    "application/json"
+                )
+
+                val body = JSONObject().apply {
+                    put("phone", phone)
+                    put("device_name", deviceName)
+                }
+
+                connection.outputStream.use {
+                    it.write(body.toString().toByteArray(Charsets.UTF_8))
+                }
+
+                val responseCode = connection.responseCode
+                val responseStream =
+                    if (responseCode in 200..299) {
+                        connection.inputStream
+                    } else {
+                        connection.errorStream
+                    }
+
+                val responseText = responseStream
+                    ?.bufferedReader()
+                    ?.use { it.readText() }
+                    ?: ""
+
+                val response = JSONObject(responseText)
+
+                if (responseCode in 200..299 &&
+                    response.optString("status") == "SUCCESS"
+                ) {
+                    val deviceToken = response.optString("device_token")
+
+                    if (deviceToken.isNotBlank()) {
+                        getSharedPreferences(
+                            "agent_gateway",
+                            MODE_PRIVATE
+                        ).edit()
+                            .putString("device_token", deviceToken)
+                            .putString("phone", phone)
+                            .apply()
+
+                        success = true
+                        message = "Agent SIM registered successfully."
+                    } else {
+                        message = "Registration response did not contain a device token."
+                    }
+                } else {
+                    message = response.optString(
+                        "message",
+                        "Registration failed. Please try again."
+                    )
+                }
+
+                connection.disconnect()
+            } catch (error: Exception) {
+                message = "Network error. Please try again."
+            }
+
+            runOnUiThread {
+                agentDeviceStatus.text =
+                    if (success) "Registered: $phone" else message
+
+                Toast.makeText(
+                    this,
+                    message,
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+        }.start()
     }
 
     private fun actionCard(
