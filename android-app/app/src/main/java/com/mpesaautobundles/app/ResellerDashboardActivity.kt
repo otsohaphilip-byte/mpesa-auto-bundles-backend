@@ -566,7 +566,7 @@ class ResellerDashboardActivity : AppCompatActivity() {
         startActivity(intent)
     }
 
-    private fun createSalesControl(): View {
+        private fun createSalesControl(): View {
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL or Gravity.END
@@ -576,32 +576,55 @@ class ResellerDashboardActivity : AppCompatActivity() {
 
         row.addView(makeText("Sales control", 13f, dark, true))
 
-        val switchPreview = Button(this).apply {
-            text = "ON"
+        salesToggleButton = Button(this).apply {
+            text = "CHECKING"
             textSize = 13f
             setTextColor(Color.WHITE)
-            setBackgroundColor(green)
+            setBackgroundColor(grey)
             minWidth = dp(90)
             minHeight = dp(44)
 
             setOnClickListener {
-                Toast.makeText(
-                    this@ResellerDashboardActivity,
-                    "Sales control is not connected yet.",
-                    Toast.LENGTH_LONG
-                ).show()
+                val status = salesIndicator.text.toString()
+
+                val paused = when (status) {
+                    "ACTIVE" -> true
+                    "INACTIVE" -> false
+                    else -> {
+                        Toast.makeText(
+                            this@ResellerDashboardActivity,
+                            "Please wait for your sales status to load.",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                        return@setOnClickListener
+                    }
+                }
+
+                isEnabled = false
+
+                val token = getSharedPreferences(
+                    "reseller_session",
+                    MODE_PRIVATE
+                ).getString("token", null)
+
+                if (token.isNullOrBlank()) {
+                    isEnabled = true
+                    return@setOnClickListener
+                }
+
+                updateResellerSalesStatus(token, paused)
             }
         }
 
         row.addView(
-            switchPreview,
+            salesToggleButton,
             LinearLayout.LayoutParams(dp(100), dp(48)).apply {
                 setMargins(dp(12), 0, 0, 0)
             }
         )
 
         return row
-    }
+        }
 
         private fun createBottomNavigation(): View {
         val nav = LinearLayout(this).apply {
