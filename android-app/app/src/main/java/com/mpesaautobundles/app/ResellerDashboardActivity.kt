@@ -100,6 +100,7 @@ class ResellerDashboardActivity : AppCompatActivity() {
 
         refreshPermissionStatus()
         validateSession(token)
+                loadSalesStatus(token)
     }
 
     override fun onResume() {
