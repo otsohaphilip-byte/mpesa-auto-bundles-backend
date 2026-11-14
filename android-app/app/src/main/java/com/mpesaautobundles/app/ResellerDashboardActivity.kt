@@ -32,6 +32,7 @@ class ResellerDashboardActivity : AppCompatActivity() {
 
     private val permissionViews = mutableMapOf<String, TextView>()
     private lateinit var salesIndicator: TextView
+        private lateinit var salesToggleButton: Button
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
