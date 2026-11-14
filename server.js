@@ -352,7 +352,9 @@ async function runDatabaseMigrations() {
   await pool.query(`
     ALTER TABLE resellers
       ADD COLUMN IF NOT EXISTS password_reset_phone VARCHAR(20);
-
+    ALTER TABLE resellers
+      ADD COLUMN IF NOT EXISTS sales_paused BOOLEAN
+      NOT NULL DEFAULT FALSE;
     ALTER TABLE offers
       ADD COLUMN IF NOT EXISTS approval_status VARCHAR(20)
         NOT NULL DEFAULT 'pending';
