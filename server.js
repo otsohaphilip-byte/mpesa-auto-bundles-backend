@@ -371,7 +371,7 @@ async function runDatabaseMigrations() {
             ALTER TABLE ussd_devices
       ADD COLUMN IF NOT EXISTS airtime_balance NUMERIC(12,2);
 
-    ALTER TABLE ussd_devices
+        ALTER TABLE ussd_devices
       ADD COLUMN IF NOT EXISTS balance_updated_at TIMESTAMPTZ;
 
     ALTER TABLE payments
