@@ -677,7 +677,8 @@ class ResellerDashboardActivity : AppCompatActivity() {
 
         return nav
         }
-        Thread {
+        Thread { 
+                private fun loadSalesStatus(token: String) {
             var paused: Boolean? = null
 
             try {
