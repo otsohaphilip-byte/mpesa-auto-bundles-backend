@@ -127,6 +127,8 @@ class ResellerDashboardActivity : AppCompatActivity() {
             brand,
             LinearLayout.LayoutParams(0, dp(55), 1f)
         )
+                salesIndicator = makeText("CHECKING", 11f, green, true)
+        header.addView(salesIndicator)
 
         header.addView(makeText("♧", 27f, green, true))
 
