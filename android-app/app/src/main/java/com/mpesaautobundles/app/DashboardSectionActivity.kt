@@ -511,15 +511,15 @@ class DashboardSectionActivity : Activity() {
                 statusText.text = "Admin platform payment details"
                 content.removeAllViews()
 
-                addProfileField(
+                                addProfileField(
                     "Platform Buy Goods Till",
                     settings,
-                    "buyGoodsTill"
+                    "admin_buy_goods_till"
                 )
                 addProfileField(
                     "Phone associated with Till",
                     settings,
-                    "tillPhone"
+                    "admin_till_phone"
                 )
 
                 content.addView(makeText(
