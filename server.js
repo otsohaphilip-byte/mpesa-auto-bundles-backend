@@ -2076,6 +2076,71 @@ app.post("/api/ussd/agent/balance", async (req, res) => {
   }
 });
 
+app.get(
+  "/api/admin/ussd/devices",
+  authenticateToken,
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const result = await pool.query(
+        `SELECT
+           d.id,
+           d.device_name,
+           d.phone,
+           d.status,
+           d.airtime_balance,
+           d.balance_updated_at,
+           d.last_seen,
+           r.name AS reseller_name
+         FROM ussd_devices d
+         LEFT JOIN resellers r
+           ON r.id = d.reseller_id
+         ORDER BY d.id DESC`
+      );
+
+      return res.json({
+        status: "SUCCESS",
+        devices: result.rows
+      });
+    } catch (error) {
+      console.error("Admin gateway list error:", error.message);
+      return sendError(res, 500, "Unable to load gateway devices.");
+    }
+  }
+);
+
+app.get(
+  "/api/reseller/ussd/device",
+  authenticateToken,
+  requireReseller,
+  async (req, res) => {
+    try {
+      const result = await pool.query(
+        `SELECT
+           id,
+           device_name,
+           phone,
+           status,
+           airtime_balance,
+           balance_updated_at,
+           last_seen
+         FROM ussd_devices
+         WHERE reseller_id = $1
+         ORDER BY id DESC
+         LIMIT 1`,
+        [req.user.resellerId]
+      );
+
+      return res.json({
+        status: "SUCCESS",
+        device: result.rows[0] || null
+      });
+    } catch (error) {
+      console.error("Reseller gateway balance error:", error.message);
+      return sendError(res, 500, "Unable to load your agent SIM balance.");
+    }
+  }
+);
 async function startServer() {
     try {
     await initializeDatabase();
