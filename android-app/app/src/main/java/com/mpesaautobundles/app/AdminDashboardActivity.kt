@@ -353,7 +353,288 @@ class AdminDashboardActivity : AppCompatActivity() {
             }
         }.start()
     }
+    private fun loadResellers() {
+        Toast.makeText(
+            this,
+            "Loading sellers...",
+            Toast.LENGTH_SHORT
+        ).show()
 
+        Thread {
+            try {
+                val connection = openConnection("/api/admin/resellers")
+                val code = connection.responseCode
+                val stream = if (code in 200..299) {
+                    connection.inputStream
+                } else {
+                    connection.errorStream
+                }
+
+                val body = stream?.bufferedReader()?.use {
+                    it.readText()
+                } ?: ""
+
+                connection.disconnect()
+
+                if (code == 401 || code == 403) {
+                    throw SecurityException()
+                }
+
+                val response = JSONObject(body)
+
+                if (
+                    code !in 200..299 ||
+                    response.optString("status") != "SUCCESS"
+                ) {
+                    throw Exception(
+                        response.optString(
+                            "message",
+                            "Unable to load sellers."
+                        )
+                    )
+                }
+
+                val sellers = response.optJSONArray("resellers")
+                    ?: JSONArray()
+
+                runOnUiThread {
+                    showResellers(sellers)
+                }
+
+            } catch (e: SecurityException) {
+                runOnUiThread {
+                    Toast.makeText(
+                        this,
+                        "Your Admin session has expired.",
+                        Toast.LENGTH_LONG
+                    ).show()
+
+                    getSharedPreferences(
+                        "admin_session",
+                        MODE_PRIVATE
+                    ).edit().clear().apply()
+
+                    goToLogin()
+                }
+
+            } catch (e: Exception) {
+                runOnUiThread {
+                    Toast.makeText(
+                        this,
+                        e.message ?: "Unable to load sellers.",
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+            }
+        }.start()
+    }
+
+    private fun showResellers(sellers: JSONArray) {
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(20, 12, 20, 12)
+        }
+
+        if (sellers.length() == 0) {
+            container.addView(
+                makeText(
+                    "No sellers have registered yet.",
+                    16f,
+                    grey
+                )
+            )
+        }
+
+        val sellerDialog = AlertDialog.Builder(this)
+            .setTitle("Registered Sellers (${sellers.length()})")
+            .setView(ScrollView(this).apply {
+                addView(container)
+            })
+            .setPositiveButton("Close", null)
+            .create()
+
+        for (i in 0 until sellers.length()) {
+            val seller = sellers.getJSONObject(i)
+
+            val id = seller.optLong("id")
+            val name = seller.optString("name", "Unnamed seller")
+            val email = seller.optString("email", "No email")
+            val phone = seller.optString("phone", "No phone")
+            val till = seller.optString(
+                "buy_goods_till",
+                "Not provided"
+            )
+            val status = seller.optString("status", "pending")
+
+            val card = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(16, 16, 16, 16)
+                background = roundedBackground(light, 12)
+            }
+
+            card.addView(makeText(name, 19f, dark, true))
+            card.addView(makeText("Email: $email", 15f, grey))
+            card.addView(makeText("Phone: $phone", 15f, grey))
+            card.addView(makeText("Buy Goods Till: $till", 15f, grey))
+
+            card.addView(
+                makeText(
+                    "Account status: ${status.uppercase()}",
+                    15f,
+                    if (status == "active") green else grey,
+                    true
+                )
+            )
+
+            if (id > 0) {
+                val activateButton = Button(this).apply {
+                    text = "Approve / Activate"
+                    setOnClickListener {
+                        sellerDialog.dismiss()
+                        confirmResellerStatus(id, name, "active")
+                    }
+                }
+
+                val pendingButton = Button(this).apply {
+                    text = "Set Pending"
+                    setOnClickListener {
+                        sellerDialog.dismiss()
+                        confirmResellerStatus(id, name, "pending")
+                    }
+                }
+
+                val suspendButton = Button(this).apply {
+                    text = "Suspend Seller"
+                    setOnClickListener {
+                        sellerDialog.dismiss()
+                        confirmResellerStatus(id, name, "suspended")
+                    }
+                }
+
+                card.addView(activateButton)
+                card.addView(pendingButton)
+                card.addView(suspendButton)
+            }
+
+            container.addView(
+                card,
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    setMargins(0, 0, 0, 16)
+                }
+            )
+        }
+
+        sellerDialog.show()
+    }
+
+    private fun confirmResellerStatus(
+        resellerId: Long,
+        resellerName: String,
+        newStatus: String
+    ) {
+        AlertDialog.Builder(this)
+            .setTitle("Confirm seller status")
+            .setMessage(
+                "Change $resellerName to ${newStatus.uppercase()}?"
+            )
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton("Confirm") { _, _ ->
+                updateResellerStatus(resellerId, newStatus)
+            }
+            .show()
+    }
+
+    private fun updateResellerStatus(
+        resellerId: Long,
+        newStatus: String
+    ) {
+        Thread {
+            var connection: HttpURLConnection? = null
+
+            try {
+                val url = URL(
+                    "https://mpesa-auto-bundles-backend.onrender.com/api/admin/resellers/$resellerId/status"
+                )
+
+                connection =
+                    url.openConnection() as HttpURLConnection
+
+                connection.requestMethod = "PATCH"
+                connection.connectTimeout = 20000
+                connection.readTimeout = 20000
+                connection.doOutput = true
+
+                connection.setRequestProperty(
+                    "Authorization",
+                    "Bearer $adminToken"
+                )
+
+                connection.setRequestProperty(
+                    "Content-Type",
+                    "application/json"
+                )
+
+                val body = JSONObject()
+                    .put("status", newStatus)
+                    .toString()
+
+                connection.outputStream.use {
+                    it.write(body.toByteArray(Charsets.UTF_8))
+                }
+
+                val code = connection.responseCode
+
+                val stream = if (code in 200..299) {
+                    connection.inputStream
+                } else {
+                    connection.errorStream
+                }
+
+                val responseBody =
+                    stream?.bufferedReader()?.use {
+                        it.readText()
+                    } ?: ""
+
+                val response = JSONObject(responseBody)
+
+                if (
+                    code !in 200..299 ||
+                    response.optString("status") != "SUCCESS"
+                ) {
+                    throw Exception(
+                        response.optString(
+                            "message",
+                            "Unable to update seller status."
+                        )
+                    )
+                }
+
+                runOnUiThread {
+                    Toast.makeText(
+                        this,
+                        "Seller status updated to ${newStatus.uppercase()}.",
+                        Toast.LENGTH_LONG
+                    ).show()
+
+                    loadResellers()
+                }
+
+            } catch (e: Exception) {
+                runOnUiThread {
+                    Toast.makeText(
+                        this,
+                        e.message ?: "Could not update seller status.",
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+            } finally {
+                connection?.disconnect()
+            }
+        }.start()
+    }
     private fun loadResellers() {
         Toast.makeText(
             this,
@@ -451,68 +732,6 @@ class AdminDashboardActivity : AppCompatActivity() {
                 if (
                     code !in 200..299 ||
                     response.optString("status") != "SUCCESS"
-                ) {
-                    throw Exception(
-                        response.optString(
-                            "message",
-                            "Unable to update seller status."
-                        )
-                    )
-                }
-
-                runOnUiThread {
-                    Toast.makeText(
-                        this,
-                        "Seller status updated to ${newStatus.uppercase()}.",
-                        Toast.LENGTH_LONG
-                    ).show()
-
-                    loadResellers()
-                }
-
-            } catch (e: Exception) {
-                runOnUiThread {
-                    Toast.makeText(
-                        this,
-                        e.message ?: "Could not update seller status.",
-                        Toast.LENGTH_LONG
-                    ).show()
-                }
-            }
-        }.start()
-                    }
-            card.addView(makeText("Phone: $phone", 13f, grey))
-            card.addView(makeText("Buy Goods Till: $till", 13f, grey))
-            card.addView(
-                makeText(
-                    "Account status: ${status.uppercase()}",
-                    13f,
-                    if (status == "active") green else grey,
-                    true
-                )
-            )
-
-            container.addView(
-                card,
-                LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT
-                ).apply {
-                    setMargins(0, 0, 0, 12)
-                }
-            )
-        }
-
-        val scroll = ScrollView(this).apply {
-            addView(container)
-        }
-
-        AlertDialog.Builder(this)
-            .setTitle("Registered Sellers (${sellers.length()})")
-            .setView(scroll)
-            .setPositiveButton("Close", null)
-            .show()
-    }
 
     private fun makeText(
         value: String,
