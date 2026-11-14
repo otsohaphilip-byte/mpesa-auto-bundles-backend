@@ -1,22 +1,206 @@
 package com.mpesaautobundles.app
 
-import android.os.Bundle
-import android.content.Intent
-import android.graphics.Color
-import android.graphics.Typeface
-import android.graphics.drawable.GradientDrawable
-import android.view.Gravity
-import android.view.View
-import android.widget.Button
-import android.widget.LinearLayout
-import android.widget.ScrollView
-import android.widget.TextView
-import android.widget.Toast
-import androidx.appcompat.app.AppCompatActivity
-import org.json.JSONObject
-import org.json.JSONArray
-import java.net.HttpURLConnection
-import java.net.URL
+private fun loadDashboard() {
+    Thread {
+        var message = "Admin account connected."
+        var expired = false
+
+        try {
+            val connection = openConnection("/api/admin/me")
+            val code = connection.responseCode
+
+            val stream = if (code in 200..299) {
+                connection.inputStream
+            } else {
+                connection.errorStream
+            }
+
+            val body = stream?.bufferedReader()?.use {
+                it.readText()
+            } ?: ""
+
+            connection.disconnect()
+
+            if (code == 401 || code == 403) {
+                throw SecurityException()
+            }
+
+            val response = JSONObject(body)
+
+            if (
+                code !in 200..299 ||
+                response.optString("status") != "SUCCESS" ||
+                response.optJSONObject("user") == null
+            ) {
+                throw Exception("Admin profile could not be verified.")
+            }
+
+        } catch (e: SecurityException) {
+            message = "Your Admin session has expired."
+            expired = true
+        } catch (e: Exception) {
+            message = "Could not connect. Check your internet and try again."
+        }
+
+        runOnUiThread {
+            statusText.text = message
+
+            if (expired) {
+                getSharedPreferences(
+                    "admin_session",
+                    MODE_PRIVATE
+                ).edit().clear().apply()
+
+                goToLogin()
+            }
+        }
+    }.start()
+}
+
+private fun loadResellers() {
+    Toast.makeText(
+        this,
+        "Loading sellers...",
+        Toast.LENGTH_SHORT
+    ).show()
+
+    Thread {
+        try {
+            val connection = openConnection("/api/admin/resellers")
+            val code = connection.responseCode
+
+            val stream = if (code in 200..299) {
+                connection.inputStream
+            } else {
+                connection.errorStream
+            }
+
+            val body = stream?.bufferedReader()?.use {
+                it.readText()
+            } ?: ""
+
+            connection.disconnect()
+
+            if (code == 401 || code == 403) {
+                throw SecurityException()
+            }
+
+            val response = JSONObject(body)
+
+            if (
+                code !in 200..299 ||
+                response.optString("status") != "SUCCESS"
+            ) {
+                throw Exception(
+                    response.optString(
+                        "message",
+                        "Unable to load sellers."
+                    )
+                )
+            }
+
+            val sellers = response.optJSONArray("resellers")
+                ?: JSONArray()
+
+            runOnUiThread {
+                showResellers(sellers)
+            }
+
+        } catch (e: SecurityException) {
+            runOnUiThread {
+                Toast.makeText(
+                    this,
+                    "Your Admin session has expired. Please log in again.",
+                    Toast.LENGTH_LONG
+                ).show()
+
+                getSharedPreferences(
+                    "admin_session",
+                    MODE_PRIVATE
+                ).edit().clear().apply()
+
+                goToLogin()
+            }
+        } catch (e: Exception) {
+            runOnUiThread {
+                Toast.makeText(
+                    this,
+                    e.message ?: "Could not load sellers.",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+        }
+    }.start()
+}
+
+private fun showResellers(sellers: JSONArray) {
+    val sellerContainer = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        setPadding(20, 12, 20, 12)
+    }
+
+    if (sellers.length() == 0) {
+        sellerContainer.addView(
+            makeText(
+                "No sellers have registered yet.",
+                15f,
+                grey
+            )
+        )
+    }
+
+    for (i in 0 until sellers.length()) {
+        val seller = sellers.getJSONObject(i)
+
+        val name = seller.optString("name", "Unnamed seller")
+        val email = seller.optString("email", "No email")
+        val phone = seller.optString("phone", "No phone")
+        val status = seller.optString("status", "pending")
+        val till = seller.optString("buy_goods_till", "Not provided")
+
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(12, 12, 12, 12)
+            background = roundedBackground(light, 12)
+        }
+
+        card.addView(
+            makeText(name, 17f, dark, true)
+        )
+
+        card.addView(makeText("Email: $email", 13f, grey))
+        card.addView(makeText("Phone: $phone", 13f, grey))
+        card.addView(makeText("Buy Goods Till: $till", 13f, grey))
+
+        card.addView(
+            makeText(
+                "Account status: ${status.uppercase()}",
+                13f,
+                if (status == "active") green else grey,
+                true
+            )
+        )
+
+        val params = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT
+        ).apply {
+            setMargins(0, 0, 0, 12)
+        }
+
+        sellerContainer.addView(card, params)
+    }
+
+    val scroll = ScrollView(this).apply {
+        addView(sellerContainer)
+    }
+
+    AlertDialog.Builder(this)
+        .setTitle("Registered Sellers (${sellers.length()})")
+        .setView(scroll)
+        .setPositiveButton("Close", null)
+        .show()
+}
 
 class AdminDashboardActivity : AppCompatActivity() {
 
