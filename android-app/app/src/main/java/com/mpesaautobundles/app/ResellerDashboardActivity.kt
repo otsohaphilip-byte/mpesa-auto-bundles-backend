@@ -46,11 +46,11 @@ class ResellerDashboardActivity : AppCompatActivity() {
         val token = getSharedPreferences(
             "reseller_session",
             MODE_PRIVATE
-                    
-        if (token.isNullOrBlank()) {
-            goToLogin()
-            return
-        }
+                 val token = getSharedPreferences(
+            "reseller_session",
+            MODE_PRIVATE
+        ).getString("token", null)           
+        
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
