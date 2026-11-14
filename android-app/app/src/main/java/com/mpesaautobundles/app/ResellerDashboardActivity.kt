@@ -715,6 +715,7 @@ class ResellerDashboardActivity : AppCompatActivity() {
                         salesIndicator.setTextColor(Color.RED)
                         salesToggleButton.text = "RESUME"
                         salesToggleButton.setBackgroundColor(green)
+                        salesToggleButton.isEnabled = true
                     }
                     false -> {
                         salesIndicator.text = "ACTIVE"
