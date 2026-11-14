@@ -349,15 +349,10 @@ class ResellerDashboardActivity : AppCompatActivity() {
             text = "REGISTER AGENT SIM"
             setTextColor(Color.WHITE)
             setBackgroundColor(green)
-                        setOnClickListener {
+                                    setOnClickListener {
                 showAgentRegistrationDialog()
-                        }
-                Toast.makeText(
-                    this@ResellerDashboardActivity,
-                    "Agent SIM registration will be connected next.",
-                    Toast.LENGTH_SHORT
-                ).show()
             }
+        }
         }
 
         card.addView(registerButton)
