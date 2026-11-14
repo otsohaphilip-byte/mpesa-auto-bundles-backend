@@ -701,7 +701,10 @@ class ResellerDashboardActivity : AppCompatActivity() {
                     }
                 }
             }
-                private fun updateResellerSalesStatus(
+                        }.start()
+    }
+
+    private fun updateResellerSalesStatus(
         token: String,
         paused: Boolean
     ) {
@@ -753,8 +756,6 @@ class ResellerDashboardActivity : AppCompatActivity() {
 
                 salesToggleButton.isEnabled = true
             }
-        }.start()
-                }
         }.start()
     }
     private fun validateSession(token: String) {
