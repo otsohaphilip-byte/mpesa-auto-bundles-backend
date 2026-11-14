@@ -308,6 +308,48 @@ class AdminDashboardActivity : AppCompatActivity() {
             nav.addView(tab, LinearLayout.LayoutParams(
                 0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f
             ))
+                private fun loadSalesStatus() {
+        Thread {
+            try {
+                val connection = openConnection("/api/system/sales-status")
+                val code = connection.responseCode
+
+                val stream = if (code in 200..299) {
+                    connection.inputStream
+                } else {
+                    connection.errorStream
+                }
+
+                val body = stream?.bufferedReader()?.use {
+                    it.readText()
+                } ?: ""
+
+                connection.disconnect()
+
+                if (code !in 200..299) {
+                    throw Exception("Could not load sales status.")
+                }
+
+                val response = JSONObject(body)
+                val paused = response.optBoolean("salesPaused", false)
+
+                runOnUiThread {
+                    if (paused) {
+                        salesIndicator.text = "INACTIVE"
+                        salesIndicator.setTextColor(Color.RED)
+                    } else {
+                        salesIndicator.text = "ACTIVE"
+                        salesIndicator.setTextColor(green)
+                    }
+                }
+            } catch (e: Exception) {
+                runOnUiThread {
+                    salesIndicator.text = "UNKNOWN"
+                    salesIndicator.setTextColor(grey)
+                }
+            }
+        }.start()
+                }
         }
         return nav
     }
