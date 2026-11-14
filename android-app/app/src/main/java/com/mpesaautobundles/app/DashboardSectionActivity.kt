@@ -914,8 +914,7 @@ class DashboardSectionActivity : Activity() {
             "message",
             item.optString("body", "")
         )
-        val read = item.optBoolean("is_read", false)
-
+        val read = !item.isNull("read_at")
         card.addView(makeText(title, 18f, dark, true))
         card.addView(makeText(message, 15f, grey))
         card.addView(makeText(
