@@ -243,32 +243,143 @@ class AdminDashboardActivity : AppCompatActivity() {
         return section
     }
 
-    private fun createSalesControl(): View {
+        private fun createSalesControl(): View {
+        var salesPaused = false
+
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL or Gravity.END
             setPadding(16, 9, 18, 9)
             setBackgroundColor(Color.WHITE)
         }
-        row.addView(makeText("Sales control", 13f, dark, true))
+
+        row.addView(makeText("Platform sales", 13f, dark, true))
+
         val button = Button(this).apply {
-            text = "ON"
+            text = "Loading"
+            isEnabled = false
             textSize = 13f
             setTextColor(Color.WHITE)
-            setBackgroundColor(green)
             minWidth = 90
             minHeight = 44
-            setOnClickListener {
-                Toast.makeText(this@AdminDashboardActivity,
-                    "Sales control will be connected to platform settings.",
-                    Toast.LENGTH_LONG).show()
-            }
         }
+
         row.addView(button, LinearLayout.LayoutParams(100, 48).apply {
             setMargins(12, 0, 0, 0)
         })
+
+        Thread {
+            try {
+                val connection = openConnection("/api/system/sales-status")
+                val code = connection.responseCode
+                val stream = if (code in 200..299) {
+                    connection.inputStream
+                } else {
+                    connection.errorStream
+                }
+                val body = stream?.bufferedReader()?.use {
+                    it.readText()
+                } ?: ""
+                connection.disconnect()
+
+                if (code !in 200..299) {
+                    throw Exception("Could not load sales setting.")
+                }
+
+                salesPaused = JSONObject(body)
+                    .optBoolean("salesPaused", false)
+
+                runOnUiThread {
+                    button.text = if (salesPaused) "OFF" else "ON"
+                    button.setBackgroundColor(
+                        if (salesPaused) grey else green
+                    )
+                    button.isEnabled = true
+                }
+            } catch (e: Exception) {
+                runOnUiThread {
+                    button.text = "Retry"
+                    button.isEnabled = true
+                }
+            }
+        }.start()
+
+        button.setOnClickListener {
+            button.isEnabled = false
+            button.text = "Saving"
+
+            val newPaused = !salesPaused
+
+            Thread {
+                try {
+                    val connection = openConnection(
+                        "/api/admin/system/sales-status"
+                    )
+                    connection.requestMethod = "PATCH"
+                    connection.doOutput = true
+                    connection.setRequestProperty(
+                        "Content-Type", "application/json"
+                    )
+
+                    val body = JSONObject()
+                        .put("paused", newPaused)
+                        .toString()
+
+                    connection.outputStream.use {
+                        it.write(body.toByteArray(Charsets.UTF_8))
+                    }
+
+                    val code = connection.responseCode
+                    val stream = if (code in 200..299) {
+                        connection.inputStream
+                    } else {
+                        connection.errorStream
+                    }
+                    val responseBody = stream?.bufferedReader()?.use {
+                        it.readText()
+                    } ?: ""
+                    connection.disconnect()
+
+                    if (code !in 200..299) {
+                        throw Exception("Could not update sales setting.")
+                    }
+
+                    salesPaused = newPaused
+
+                    runOnUiThread {
+                        button.text = if (salesPaused) "OFF" else "ON"
+                        button.setBackgroundColor(
+                            if (salesPaused) grey else green
+                        )
+                        salesIndicator.text =
+                            if (salesPaused) "INACTIVE" else "ACTIVE"
+                        salesIndicator.setTextColor(
+                            if (salesPaused) Color.RED else green
+                        )
+                        button.isEnabled = true
+                        Toast.makeText(
+                            this,
+                            if (salesPaused) "Platform sales paused."
+                            else "Platform sales activated.",
+                            Toast.LENGTH_LONG
+                        ).show()
+                    }
+                } catch (e: Exception) {
+                    runOnUiThread {
+                        button.text = if (salesPaused) "OFF" else "ON"
+                        button.isEnabled = true
+                        Toast.makeText(
+                            this,
+                            e.message ?: "Update failed.",
+                            Toast.LENGTH_LONG
+                        ).show()
+                    }
+                }
+            }.start()
+        }
+
         return row
-    }
+        }
         private fun createBottomNavigation(): View {
         val nav = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
