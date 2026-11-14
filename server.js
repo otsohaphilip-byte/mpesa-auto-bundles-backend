@@ -2077,7 +2077,7 @@ app.post("/api/ussd/agent/balance", async (req, res) => {
 });
 
 async function startServer() {
-    try {
+ try {
     await initializeDatabase();
 
     await installOperations(
