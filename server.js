@@ -1358,6 +1358,131 @@ app.get(
 );
 
 app.post(
+  "/api/reseller/offers/:id/customize",
+  authenticateToken,
+  requireReseller,
+  async (req, res) => {
+    const sourceOfferId = Number(req.params.id);
+
+    if (
+      !Number.isSafeInteger(sourceOfferId) ||
+      sourceOfferId < 1
+    ) {
+      return sendError(res, 400, "Invalid platform offer ID.");
+    }
+
+    const client = await pool.connect();
+
+    try {
+      await client.query("BEGIN");
+
+      const result = await client.query(
+        `INSERT INTO offers (
+           reseller_id,
+           catalog_product_id,
+           name,
+           price,
+           approval_status,
+           commission_per_sale,
+           bingwa_price,
+           safaricom_price,
+           ussd_code,
+           alternative_ussd_code,
+           menu_keyword,
+           active_start_time,
+           active_end_time,
+           daily_start_time,
+           daily_end_time,
+           category,
+           delivery_method,
+           recovery_strategy,
+           active,
+           source_offer_id
+         )
+         SELECT
+           $1,
+           o.catalog_product_id,
+           o.name,
+           o.price,
+           'approved',
+           o.commission_per_sale,
+           o.bingwa_price,
+           o.safaricom_price,
+           o.ussd_code,
+           o.alternative_ussd_code,
+           o.menu_keyword,
+           o.active_start_time,
+           o.active_end_time,
+           o.daily_start_time,
+           o.daily_end_time,
+           o.category,
+           o.delivery_method,
+           o.recovery_strategy,
+           FALSE,
+           o.id
+         FROM offers o
+         JOIN product_catalog p
+           ON p.id = o.catalog_product_id
+         WHERE o.id = $2
+           AND o.reseller_id IS NULL
+           AND o.approval_status = 'approved'
+           AND o.active = TRUE
+           AND p.active = TRUE
+           AND p.delivery_method IS NOT NULL
+           AND (
+             p.delivery_method <> 'ussd'
+             OR NULLIF(p.ussd_code, '') IS NOT NULL
+           )
+         ON CONFLICT (reseller_id, source_offer_id)
+           WHERE reseller_id IS NOT NULL
+             AND source_offer_id IS NOT NULL
+         DO NOTHING
+         RETURNING *`,
+        [req.user.resellerId, sourceOfferId]
+      );
+
+      let offer = result.rows[0];
+
+      if (!offer) {
+        const existing = await client.query(
+          `SELECT *
+           FROM offers
+           WHERE reseller_id = $1
+             AND source_offer_id = $2
+           LIMIT 1`,
+          [req.user.resellerId, sourceOfferId]
+        );
+
+        if (!existing.rows.length) {
+          await client.query("ROLLBACK");
+          return sendError(
+            res,
+            404,
+            "This platform offer is unavailable or not ready for delivery."
+          );
+        }
+
+        offer = existing.rows[0];
+      }
+
+      await client.query("COMMIT");
+
+      return res.json({
+        status: "SUCCESS",
+        message: "Your private offer copy is ready. You can customise its price.",
+        offer
+      });
+    } catch (error) {
+      await client.query("ROLLBACK");
+      console.error("Customize offer error:", error.message);
+      return sendError(res, 500, "Unable to customise this offer.");
+    } finally {
+      client.release();
+    }
+  }
+);
+    
+app.post(
   "/api/offers",
   authenticateToken,
   requireAdminOrReseller,
