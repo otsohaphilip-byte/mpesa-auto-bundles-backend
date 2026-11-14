@@ -254,6 +254,7 @@ async function createAdditionalTables() {
 async function createFulfilmentTables() {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS ussd_devices (
+          CREATE TABLE IF NOT EXISTS ussd_devices (
       id BIGSERIAL PRIMARY KEY,
       reseller_id BIGINT
         REFERENCES resellers(id) ON DELETE CASCADE,
@@ -261,16 +262,11 @@ async function createFulfilmentTables() {
       phone VARCHAR(20),
       device_token TEXT UNIQUE,
       status VARCHAR(30) NOT NULL DEFAULT 'offline',
-            device_token TEXT UNIQUE,
-      status VARCHAR(30) NOT NULL DEFAULT 'offline',
       airtime_balance NUMERIC(12,2),
       balance_updated_at TIMESTAMPTZ,
       last_seen TIMESTAMPTZ,
-
-    CREATE TABLE IF NOT EXISTS ussd_templates (
-      id BIGSERIAL PRIMARY KEY,
-      product_catalog_id BIGINT
-        REFERENCES product_catalog(id),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
       version INTEGER NOT NULL DEFAULT 1,
       ussd_code TEXT NOT NULL,
       menu_steps JSONB NOT NULL DEFAULT '[]'::jsonb,
