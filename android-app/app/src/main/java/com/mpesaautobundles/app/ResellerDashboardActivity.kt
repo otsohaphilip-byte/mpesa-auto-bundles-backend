@@ -708,7 +708,8 @@ class ResellerDashboardActivity : AppCompatActivity() {
                 paused = null
             }
 
-                            when (paused) {
+                                        runOnUiThread {
+                when (paused) {
                     true -> {
                         salesIndicator.text = "INACTIVE"
                         salesIndicator.setTextColor(Color.RED)
@@ -727,8 +728,8 @@ class ResellerDashboardActivity : AppCompatActivity() {
                         salesToggleButton.text = "UNAVAILABLE"
                         salesToggleButton.setBackgroundColor(grey)
                     }
-                            }
-            }
+                }
+                                        }
                         }.start()
     }
 
