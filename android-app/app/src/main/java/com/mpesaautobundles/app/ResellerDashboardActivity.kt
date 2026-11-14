@@ -46,11 +46,7 @@ class ResellerDashboardActivity : AppCompatActivity() {
         val token = getSharedPreferences(
             "reseller_session",
             MODE_PRIVATE
-                    val token = getSharedPreferences(
-            "reseller_session",
-            MODE_PRIVATE
-        ).getString("token", null)
-
+                    
         if (token.isNullOrBlank()) {
             goToLogin()
             return
