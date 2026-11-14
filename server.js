@@ -16,7 +16,7 @@ require("dotenv").config();
 
 const app = express();
 app.get("/admin.html", (req, res) => {
-  res.sendFile(path.join(__dirname, "admin.html"));
+  "Content-Type, x-test-key, Authorization, x-device-token"
 });
 
 app.use(express.json({ limit: "100kb" }));
