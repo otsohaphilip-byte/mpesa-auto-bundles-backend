@@ -332,6 +332,84 @@ class DashboardSectionActivity : Activity() {
             }
         }
     }
+        private fun showNewOfferPriceDialog(product: JSONObject) {
+        val layout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(24, 12, 24, 8)
+        }
+
+        val sellingPrice = EditText(this).apply {
+            hint = "Your selling price (KSh)"
+            inputType = 8194
+            setText(product.optString("price", ""))
+        }
+
+        val bingwaPrice = EditText(this).apply {
+            hint = "Your Bingwa purchase price (KSh)"
+            inputType = 8194
+            setText(product.optString("bingwa_price", ""))
+        }
+
+        layout.addView(sellingPrice)
+        layout.addView(bingwaPrice)
+
+        val dialog = AlertDialog.Builder(this)
+            .setTitle(product.optString("name"))
+            .setMessage("Enter the prices for your own offer.")
+            .setView(layout)
+            .setPositiveButton("Create Offer", null)
+            .setNegativeButton("Cancel", null)
+            .create()
+
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE)
+                .setOnClickListener {
+                    val price = sellingPrice.text.toString()
+                        .trim().toDoubleOrNull()
+                    val bingwa = bingwaPrice.text.toString()
+                        .trim().toDoubleOrNull()
+
+                    if (price == null || bingwa == null ||
+                        price <= 0 || bingwa <= 0) {
+                        Toast.makeText(
+                            this,
+                            "Enter valid prices greater than zero.",
+                            Toast.LENGTH_LONG
+                        ).show()
+                        return@setOnClickListener
+                    }
+
+                    val body = JSONObject()
+                        .put("catalog_product_id", product.optLong("id"))
+                        .put("price", price)
+                        .put("bingwa_price", bingwa)
+
+                    dialog.dismiss()
+
+                    runRequest {
+                        val result = request(
+                            "/api/offers",
+                            "POST",
+                            body
+                        )
+
+                        runOnUiThread {
+                            Toast.makeText(
+                                this,
+                                result.optString(
+                                    "message",
+                                    "Offer created successfully."
+                                ),
+                                Toast.LENGTH_LONG
+                            ).show()
+                            loadOffers()
+                        }
+                    }
+                }
+        }
+
+        dialog.show()
+        }
     private fun addOfferCard(offer: JSONObject) {
         val card = makeCard()
         val id = offer.optLong("id")
