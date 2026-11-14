@@ -484,7 +484,7 @@ class DashboardSectionActivity : Activity() {
                 statusText.text = "Reseller profile"
                 content.removeAllViews()
 
-                                addProfileField("Full name", user, "name")
+                                                addProfileField("Full name", user, "name")
                 addProfileField("Email", user, "email")
                 addProfileField("Main phone", user, "phone")
                 addProfileField(
