@@ -37,7 +37,7 @@ class ResellerDashboardActivity : AppCompatActivity() {
     private val permissionViews = mutableMapOf<String, TextView>()
     private lateinit var salesIndicator: TextView
         private lateinit var salesToggleButton: Button
-    override fun onCreate(savedInstanceState: Bundle?) {
+        override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
         window.statusBarColor = darkGreen
@@ -46,15 +46,14 @@ class ResellerDashboardActivity : AppCompatActivity() {
         val token = getSharedPreferences(
             "reseller_session",
             MODE_PRIVATE
-                    val token = getSharedPreferences(
-            "reseller_session",
-            MODE_PRIVATE
         ).getString("token", null)
 
         if (token.isNullOrBlank()) {
             goToLogin()
             return
         }
+
+        val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(Color.WHITE)
         }
@@ -85,7 +84,6 @@ class ResellerDashboardActivity : AppCompatActivity() {
         content.addView(createStatsGrid())
         content.addView(createCommissionSection())
         content.addView(createQuickActions())
-        content.addView(createAgentSimSection())
         content.addView(createRecentTransactions())
         content.addView(createPermissionSection())
 
@@ -103,7 +101,7 @@ class ResellerDashboardActivity : AppCompatActivity() {
         setContentView(root)
         validateSession(token)
         loadSalesStatus(token)
-            }
+        }
 
     override fun onResume() {
         super.onResume()
