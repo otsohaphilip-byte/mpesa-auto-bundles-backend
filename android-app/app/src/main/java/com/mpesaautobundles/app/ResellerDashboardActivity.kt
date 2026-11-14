@@ -257,7 +257,6 @@ class ResellerDashboardActivity : AppCompatActivity() {
                 column,
                 LinearLayout.LayoutParams(0, -2, 1f)
             )
-                )
 
         }
 
