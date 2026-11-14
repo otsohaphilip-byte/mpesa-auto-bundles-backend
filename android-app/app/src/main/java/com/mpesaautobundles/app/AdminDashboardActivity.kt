@@ -309,7 +309,11 @@ class AdminDashboardActivity : AppCompatActivity() {
             nav.addView(tab, LinearLayout.LayoutParams(
                 0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f
             ))
-                private fun loadSalesStatus() {
+                        }
+        return nav
+    }
+
+    private fun loadSalesStatus() {
         Thread {
             try {
                 val connection = openConnection("/api/system/sales-status")
@@ -350,8 +354,7 @@ class AdminDashboardActivity : AppCompatActivity() {
                 }
             }
         }.start()
-                }
-        }
+    }
         return nav
     }
 
