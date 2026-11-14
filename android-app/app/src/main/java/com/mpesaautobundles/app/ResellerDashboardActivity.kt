@@ -353,7 +353,6 @@ class ResellerDashboardActivity : AppCompatActivity() {
                 showAgentRegistrationDialog()
             }
         }
-        }
 
         card.addView(registerButton)
         section.addView(card)
