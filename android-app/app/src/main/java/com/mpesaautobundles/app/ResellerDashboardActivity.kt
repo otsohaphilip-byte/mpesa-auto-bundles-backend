@@ -46,18 +46,25 @@ class ResellerDashboardActivity : AppCompatActivity() {
         val token = getSharedPreferences(
             "reseller_session",
             MODE_PRIVATE
+                    val token = getSharedPreferences(
+            "reseller_session",
+            MODE_PRIVATE
         ).getString("token", null)
 
         if (token.isNullOrBlank()) {
             goToLogin()
             return
-                content.addView(
-            makeText(
-                "Here is your business overview.",
-                14f,
-                grey
-            )
-        )
+        }
+
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(Color.WHITE)
+        }
+
+        val scroll = ScrollView(this)
+
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
             setPadding(dp(18), dp(18), dp(18), dp(20))
         }
 
@@ -70,8 +77,6 @@ class ResellerDashboardActivity : AppCompatActivity() {
         )
 
         content.addView(
-            makeText(
-                        content.addView(
             makeText(
                 "Here is your business overview.",
                 14f,
@@ -96,8 +101,11 @@ class ResellerDashboardActivity : AppCompatActivity() {
                 1f
             )
         )
-                loadSalesStatus(token)
-    }
+
+        setContentView(root)
+        validateSession(token)
+        loadSalesStatus(token)
+            }
 
     override fun onResume() {
         super.onResume()
