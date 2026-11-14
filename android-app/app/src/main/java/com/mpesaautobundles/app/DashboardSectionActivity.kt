@@ -294,7 +294,44 @@ class DashboardSectionActivity : Activity() {
             }
         }
     }
+    private fun showAddOfferDialog() {
+        runRequest {
+            val response = request("/api/catalog")
+            val catalog = response.optJSONArray("catalog")
+                ?: JSONArray()
 
+            runOnUiThread {
+                if (catalog.length() == 0) {
+                    Toast.makeText(
+                        this,
+                        "No active catalogue products are available.",
+                        Toast.LENGTH_LONG
+                    ).show()
+                    return@runOnUiThread
+                }
+
+                val products = ArrayList<JSONObject>()
+                val labels = ArrayList<String>()
+
+                for (i in 0 until catalog.length()) {
+                    val product = catalog.getJSONObject(i)
+                    products.add(product)
+
+                    labels.add(
+                        "${product.optString("name")} - KSh ${product.optString("price")}"
+                    )
+                }
+
+                AlertDialog.Builder(this)
+                    .setTitle("Choose a Bundle")
+                    .setItems(labels.toTypedArray()) { _, which ->
+                        showNewOfferPriceDialog(products[which])
+                    }
+                    .setNegativeButton("Cancel", null)
+                    .show()
+            }
+        }
+    }
     private fun addOfferCard(offer: JSONObject) {
         val card = makeCard()
         val id = offer.optLong("id")
