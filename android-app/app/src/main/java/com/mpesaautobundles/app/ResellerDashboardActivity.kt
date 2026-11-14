@@ -729,8 +729,8 @@ class ResellerDashboardActivity : AppCompatActivity() {
                         salesToggleButton.setBackgroundColor(grey)
                     }
                 }
-                                        }
-                        }.start()
+                            }
+        }.start()
     }
 
     private fun updateResellerSalesStatus(
