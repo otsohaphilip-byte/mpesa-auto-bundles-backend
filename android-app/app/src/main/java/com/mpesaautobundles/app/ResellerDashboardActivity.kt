@@ -37,6 +37,7 @@ class ResellerDashboardActivity : AppCompatActivity() {
     private val permissionViews = mutableMapOf<String, TextView>()
     private lateinit var salesIndicator: TextView
         private lateinit var salesToggleButton: Button
+        private lateinit var agentDeviceStatus: TextView
         override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -84,6 +85,7 @@ class ResellerDashboardActivity : AppCompatActivity() {
         content.addView(createStatsGrid())
         content.addView(createCommissionSection())
         content.addView(createQuickActions())
+        content.addView(createAgentSimSection())
         content.addView(createRecentTransactions())
         content.addView(createPermissionSection())
 
@@ -309,6 +311,59 @@ class ResellerDashboardActivity : AppCompatActivity() {
     }
 
     private fun actionCard(
+            private fun createAgentSimSection(): View {
+        val section = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, dp(22), 0, dp(10))
+        }
+
+        section.addView(
+            makeText("Bingwa Agent SIM", 19f, dark, true)
+        )
+
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), dp(16), dp(16), dp(16))
+            background = roundedBackground(light, 12)
+        }
+
+        card.addView(
+            makeText(
+                "Connect your Safaricom Bingwa agent line to monitor its status and airtime balance.",
+                14f,
+                grey
+            )
+        )
+
+        agentDeviceStatus = makeText(
+            "Not connected",
+            14f,
+            darkGreen,
+            true
+        ).apply {
+            setPadding(0, dp(14), 0, dp(10))
+        }
+
+        card.addView(agentDeviceStatus)
+
+        val registerButton = Button(this).apply {
+            text = "REGISTER AGENT SIM"
+            setTextColor(Color.WHITE)
+            setBackgroundColor(green)
+            setOnClickListener {
+                Toast.makeText(
+                    this@ResellerDashboardActivity,
+                    "Agent SIM registration will be connected next.",
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
+        }
+
+        card.addView(registerButton)
+        section.addView(card)
+
+        return section
+            }
         symbol: String,
         label: String
     ): View {
