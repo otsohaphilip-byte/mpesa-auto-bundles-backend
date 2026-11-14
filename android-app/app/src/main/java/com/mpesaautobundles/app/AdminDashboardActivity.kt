@@ -395,61 +395,92 @@ class AdminDashboardActivity : AppCompatActivity() {
                 val sellers = response.optJSONArray("resellers")
                     ?: JSONArray()
 
-                runOnUiThread {
-                    showResellers(sellers)
+                    private fun updateResellerStatus(
+        resellerId: Long,
+        newStatus: String
+    ) {
+        Thread {
+            try {
+                val url = URL(
+                    "https://mpesa-auto-bundles-backend.onrender.com/api/admin/resellers/$resellerId/status"
+                )
+
+                val connection =
+                    url.openConnection() as HttpURLConnection
+
+                connection.requestMethod = "PATCH"
+                connection.connectTimeout = 20000
+                connection.readTimeout = 20000
+                connection.doOutput = true
+
+                connection.setRequestProperty(
+                    "Authorization",
+                    "Bearer $adminToken"
+                )
+
+                connection.setRequestProperty(
+                    "Content-Type",
+                    "application/json"
+                )
+
+                val body = JSONObject()
+                    .put("status", newStatus)
+                    .toString()
+
+                connection.outputStream.use {
+                    it.write(body.toByteArray(Charsets.UTF_8))
                 }
-            } catch (e: SecurityException) {
+
+                val code = connection.responseCode
+
+                val stream = if (code in 200..299) {
+                    connection.inputStream
+                } else {
+                    connection.errorStream
+                }
+
+                val responseBody =
+                    stream?.bufferedReader()?.use {
+                        it.readText()
+                    } ?: ""
+
+                connection.disconnect()
+
+                val response = JSONObject(responseBody)
+
+                if (
+                    code !in 200..299 ||
+                    response.optString("status") != "SUCCESS"
+                ) {
+                    throw Exception(
+                        response.optString(
+                            "message",
+                            "Unable to update seller status."
+                        )
+                    )
+                }
+
                 runOnUiThread {
                     Toast.makeText(
                         this,
-                        "Your Admin session has expired. Please log in again.",
+                        "Seller status updated to ${newStatus.uppercase()}.",
                         Toast.LENGTH_LONG
                     ).show()
 
-                    getSharedPreferences("admin_session", MODE_PRIVATE)
-                        .edit().clear().apply()
-                    goToLogin()
+                    loadResellers()
                 }
+
             } catch (e: Exception) {
                 runOnUiThread {
                     Toast.makeText(
                         this,
-                        e.message ?: "Could not load sellers.",
+                        e.message ?: "Could not update seller status.",
                         Toast.LENGTH_LONG
                     ).show()
                 }
             }
         }.start()
-    }
-
-    private fun showResellers(sellers: JSONArray) {
-        val container = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(20, 12, 20, 12)
-        }
-
-        if (sellers.length() == 0) {
-            container.addView(
-                makeText("No sellers have registered yet.", 15f, grey)
-            )
-        }
-
-        for (i in 0 until sellers.length()) {
-            val seller = sellers.getJSONObject(i)
-            val name = seller.optString("name", "Unnamed seller")
-            val email = seller.optString("email", "No email")
-            val phone = seller.optString("phone", "No phone")
-            val status = seller.optString("status", "pending")
-            val till = seller.optString("buy_goods_till", "Not provided")
-
-            val card = LinearLayout(this).apply {
-                orientation = LinearLayout.VERTICAL
-                setPadding(12, 12, 12, 12)
-                background = roundedBackground(light, 12)
-            }
-
-            card.addView(makeText(name, 17f, dark, true))
-            card.addView(makeText("Email: $email", 13f, grey))
+                    }
             card.addView(makeText("Phone: $phone", 13f, grey))
             card.addView(makeText("Buy Goods Till: $till", 13f, grey))
             card.addView(
