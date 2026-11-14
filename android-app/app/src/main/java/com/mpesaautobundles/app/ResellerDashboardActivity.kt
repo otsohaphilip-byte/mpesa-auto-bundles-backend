@@ -79,6 +79,7 @@ class ResellerDashboardActivity : AppCompatActivity() {
                 14f,
                 grey
             )
+            content.addView(createAgentSimSection())
         )
 
         content.addView(createStatsGrid())
