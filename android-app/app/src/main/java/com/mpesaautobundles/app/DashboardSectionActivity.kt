@@ -484,7 +484,7 @@ class DashboardSectionActivity : Activity() {
                 statusText.text = "Reseller profile"
                 content.removeAllViews()
 
-                addProfileField("Full name", user, "full_name")
+                                addProfileField("Full name", user, "name")
                 addProfileField("Email", user, "email")
                 addProfileField("Main phone", user, "phone")
                 addProfileField(
@@ -494,10 +494,6 @@ class DashboardSectionActivity : Activity() {
                 addProfileField(
                     "Till phone number",
                     user, "till_phone"
-                )
-                addProfileField(
-                    "Bingwa agent SIM",
-                    user, "agent_phone"
                 )
             }
         }
