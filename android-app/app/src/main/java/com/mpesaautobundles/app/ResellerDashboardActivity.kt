@@ -100,7 +100,8 @@ class ResellerDashboardActivity : AppCompatActivity() {
                 1f
             )
         )
-
+        
+root.addView(createBottomNavigation())
         setContentView(root)
         validateSession(token)
         loadSalesStatus(token)
