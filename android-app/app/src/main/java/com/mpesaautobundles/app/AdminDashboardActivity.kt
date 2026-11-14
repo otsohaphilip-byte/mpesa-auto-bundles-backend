@@ -284,7 +284,8 @@ class AdminDashboardActivity : AppCompatActivity() {
             }
         }
     }
-        private fun createQuickActions(): View {
+        
+    private fun createQuickActions(): View {
         val section = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(0, 22, 0, 0)
@@ -296,6 +297,7 @@ class AdminDashboardActivity : AppCompatActivity() {
 
         val row1 = LinearLayout(this)
         val row2 = LinearLayout(this)
+        val row3 = LinearLayout(this)
 
         row1.addView(
             actionCard("⚡", "Quick Sell"),
@@ -315,8 +317,14 @@ class AdminDashboardActivity : AppCompatActivity() {
             weightedParams()
         )
 
+        row3.addView(
+            actionCard("👥", "Sellers"),
+            weightedParams()
+        )
+
         section.addView(row1)
         section.addView(row2)
+        section.addView(row3)
 
         return section
     }
@@ -343,16 +351,20 @@ class AdminDashboardActivity : AppCompatActivity() {
         )
 
         card.setOnClickListener {
-            Toast.makeText(
-                this,
-                "$label will be connected in the next stage.",
-                Toast.LENGTH_SHORT
-            ).show()
+            if (label == "Sellers") {
+                loadResellers()
+            } else {
+                Toast.makeText(
+                    this,
+                    "$label will be connected in the next stage.",
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
         }
 
         return card
     }
-
+    
     private fun createRecentTransactions(): View {
         val section = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
