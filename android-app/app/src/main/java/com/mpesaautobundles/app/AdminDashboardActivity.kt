@@ -309,7 +309,6 @@ class AdminDashboardActivity : AppCompatActivity() {
             nav.addView(tab, LinearLayout.LayoutParams(
                 0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f
             ))
-                        ))
         }
         return nav
     }
