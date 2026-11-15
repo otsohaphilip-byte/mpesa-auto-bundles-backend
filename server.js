@@ -776,7 +776,8 @@ app.get(
     }
   }
 );
-
+app.post(
+  "/api/logout",
 app.post(
   "/api/logout",
   authenticateToken,
