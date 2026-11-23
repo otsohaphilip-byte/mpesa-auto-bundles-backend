@@ -769,17 +769,30 @@ app.get(
   async (req, res) => {
     try {
       const result = await pool.query(
-        `SELECT
-           id,
-           name,
-           email,
-           phone,
-           buy_goods_till,
-           till_phone,
-           status,
-           created_at
-         FROM resellers
-         WHERE id = $1
+                `SELECT
+           r.id,
+           r.name,
+           r.email,
+           r.phone,
+           r.buy_goods_till,
+           r.till_phone,
+           r.status,
+           r.payment_mode,
+           r.created_at,
+           COALESCE(
+             (SELECT w.balance
+              FROM token_wallets w
+              WHERE w.reseller_id = r.id),
+             0
+           ) AS token_balance,
+           (SELECT MAX(s.expires_at)
+            FROM subscriptions s
+            WHERE s.reseller_id = r.id
+              AND s.status = 'active'
+              AND s.expires_at > NOW()
+           ) AS subscription_expires_at
+         FROM resellers r
+         WHERE r.id = $1
          LIMIT 1`,
         [req.user.resellerId]
       );
