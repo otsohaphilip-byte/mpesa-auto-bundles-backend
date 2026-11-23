@@ -949,7 +949,6 @@ function installSubscriptionStatusRoutes(
               );
             }
           }
-          }
 
         res.json({
           status: "OK",
