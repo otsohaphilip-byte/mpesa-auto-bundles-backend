@@ -2238,6 +2238,12 @@ app.get(
 async function startServer() {
     try {
     await initializeDatabase();
+          await installSubscriptionPayments(
+      app,
+      pool,
+      authenticateToken,
+      requireReseller
+    );
 
     await installOperations(
       app,
