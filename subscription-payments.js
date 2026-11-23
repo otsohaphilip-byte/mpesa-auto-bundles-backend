@@ -305,6 +305,219 @@ async function processStoredSubscriptionCallback(
       [checkoutRequestId]
     );
 
+    if (
+      !paymentResult.rows.length ||
+      !callbackResult.rows.length
+    ) {
+      await client.query("ROLLBACK");
+      return false;
+    }
+
+    const payment = paymentResult.rows[0];
+    const callback = callbackResult.rows[0];
+
+    if (payment.status === "success") {
+      await client.query("COMMIT");
+      return true;
+    }
+
+    const stk = callback.callback_payload?.Body?.stkCallback;
+    const metadata = stk?.CallbackMetadata?.Item;
+
+    if (!stk) {
+      await client.query("ROLLBACK");
+      return false;
+    }
+
+    if (Number(stk.ResultCode) !== 0) {
+      await client.query(
+        `UPDATE subscription_payments
+         SET status = 'failed',
+             processing_note = $2
+         WHERE checkout_request_id = $1`,
+        [
+          checkoutRequestId,
+          String(stk.ResultDesc || "Payment failed.")
+        ]
+      );
+
+      await client.query(
+        `UPDATE subscription_payment_callbacks
+         SET processing_status = 'failed',
+             processing_note = 'Payment was unsuccessful.'
+         WHERE checkout_request_id = $1`,
+        [checkoutRequestId]
+      );
+
+      await client.query("COMMIT");
+      return false;
+    }
+
+    const amount = callbackAmount(metadata);
+    const phone = callbackPhone(metadata);
+    const receipt = callbackReceipt(metadata);
+
+    const validMetadata =
+      amount !== null &&
+      amount === Number(payment.amount) &&
+      phone !== null &&
+      phone === payment.phone &&
+      receipt !== null &&
+      receipt.length >= 5;
+
+    if (!validMetadata) {
+      await client.query(
+        `UPDATE subscription_payments
+         SET status = 'review',
+             processing_note = 'Callback details do not match payment.'
+         WHERE checkout_request_id = $1`,
+        [checkoutRequestId]
+      );
+
+      await client.query(
+        `UPDATE subscription_payment_callbacks
+         SET processing_status = 'review',
+             processing_note = 'Callback details mismatch.'
+         WHERE checkout_request_id = $1`,
+        [checkoutRequestId]
+      );
+
+      await client.query("COMMIT");
+      return false;
+    }
+
+    const queryResult = payment.query_payload;
+
+    if (
+      !queryResult ||
+      String(queryResult.ResponseCode) !== "0" ||
+      Number(queryResult.ResultCode) !== 0
+    ) {
+      await client.query(
+        `UPDATE subscription_payment_callbacks
+         SET processing_status = 'retry',
+             processing_note = 'Safaricom verification is pending.'
+         WHERE checkout_request_id = $1`,
+        [checkoutRequestId]
+      );
+
+      await client.query(
+        `UPDATE subscription_payments
+         SET status = 'pending',
+             processing_note = 'Awaiting transaction verification.'
+         WHERE checkout_request_id = $1`,
+        [checkoutRequestId]
+      );
+
+      await client.query("COMMIT");
+      return false;
+    }
+
+    const plan = SUBSCRIPTION_PLANS[payment.plan];
+
+    if (!plan) {
+      throw new Error("Subscription plan is invalid.");
+    }
+
+    // Serialize subscription activation per reseller.
+    await client.query(
+      `SELECT id
+       FROM resellers
+       WHERE id = $1
+       FOR UPDATE`,
+      [payment.reseller_id]
+    );
+
+    const existing = await client.query(
+      `SELECT expires_at
+       FROM subscriptions
+       WHERE reseller_id = $1
+         AND status = 'active'
+         AND expires_at > NOW()
+       ORDER BY expires_at DESC
+       LIMIT 1`,
+      [payment.reseller_id]
+    );
+
+    const startsAt = existing.rows.length
+      ? new Date(existing.rows[0].expires_at)
+      : new Date();
+
+    const expiresAt = new Date(startsAt);
+
+    expiresAt.setUTCDate(
+      expiresAt.getUTCDate() + plan.days
+    );
+
+    await client.query(
+      `INSERT INTO subscriptions
+       (reseller_id, plan, amount, status, starts_at, expires_at)
+       VALUES ($1, $2, $3, 'active', $4, $5)`,
+      [
+        payment.reseller_id,
+        payment.plan,
+        payment.amount,
+        startsAt,
+        expiresAt
+      ]
+    );
+
+    await client.query(
+      `UPDATE subscription_payments
+       SET status = 'success',
+           mpesa_receipt = $2,
+           verified_at = NOW(),
+           processing_note = 'Payment verified successfully.'
+       WHERE checkout_request_id = $1`,
+      [checkoutRequestId, receipt]
+    );
+
+    await client.query(
+      `UPDATE subscription_payment_callbacks
+       SET processing_status = 'success',
+           processing_note = 'Payment verified successfully.'
+       WHERE checkout_request_id = $1`,
+      [checkoutRequestId]
+    );
+
+    await client.query("COMMIT");
+    return true;
+  } catch (error) {
+    await client.query("ROLLBACK");
+    console.error(
+      "Subscription verification error:",
+      error
+    );
+    throw error;
+  } finally {
+    client.release();
+  }
+        }
+async function processStoredSubscriptionCallback(
+  pool,
+  checkoutRequestId
+) {
+  const client = await pool.connect();
+
+  try {
+    await client.query("BEGIN");
+
+    const paymentResult = await client.query(
+      `SELECT *
+       FROM subscription_payments
+       WHERE checkout_request_id = $1
+       FOR UPDATE`,
+      [checkoutRequestId]
+    );
+
+    const callbackResult = await client.query(
+      `SELECT *
+       FROM subscription_payment_callbacks
+       WHERE checkout_request_id = $1
+       FOR UPDATE`,
+      [checkoutRequestId]
+    );
+
     if (!paymentResult.rows.length ||
         !callbackResult.rows.length) {
       await client.query("ROLLBACK");
@@ -379,68 +592,6 @@ async function processStoredSubscriptionCallback(
       throw new Error("Subscription plan is invalid.");
     }
 
-    const existing = await client.query(
-      `SELECT expires_at
-       FROM subscriptions
-       WHERE reseller_id = $1
-         AND status = 'active'
-         AND expires_at > NOW()
-       ORDER BY expires_at DESC
-       LIMIT 1
-       FOR UPDATE`,
-      [payment.reseller_id]
-    );
-
-    const startsAt = existing.rows.length
-      ? new Date(existing.rows[0].expires_at)
-      : new Date();
-
-    const expiresAt = new Date(startsAt);
-    expiresAt.setUTCDate(
-      expiresAt.getUTCDate() + plan.days
-    );
-
-    await client.query(
-      `INSERT INTO subscriptions
-       (reseller_id, plan, amount, status, starts_at, expires_at)
-       VALUES ($1, $2, $3, 'active', $4, $5)`,
-      [
-        payment.reseller_id,
-        payment.plan,
-        payment.amount,
-        startsAt,
-        expiresAt
-      ]
-    );
-
-    await client.query(
-      `UPDATE subscription_payments
-       SET status = 'success',
-           mpesa_receipt = $2,
-           verified_at = NOW(),
-           processing_note = 'Payment verified successfully.'
-       WHERE checkout_request_id = $1`,
-      [checkoutRequestId, receipt]
-    );
-
-    await client.query(
-      `UPDATE subscription_payment_callbacks
-       SET processing_status = 'success',
-           processing_note = 'Payment verified successfully.'
-       WHERE checkout_request_id = $1`,
-      [checkoutRequestId]
-    );
-
-    await client.query("COMMIT");
-    return true;
-  } catch (error) {
-    await client.query("ROLLBACK");
-    console.error("Subscription verification error:", error);
-    throw error;
-  } finally {
-    client.release();
-  }
-      }
 async function initiateSubscriptionStk(
   app,
   pool,
