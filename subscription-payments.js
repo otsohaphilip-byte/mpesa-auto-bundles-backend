@@ -850,7 +850,7 @@ function installSubscriptionStatusRoutes(
               );
             }
           }
-
+        }
         res.json({
           status: "OK",
           payment: result.rows[0]
