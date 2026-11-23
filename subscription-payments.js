@@ -492,7 +492,7 @@ async function processStoredSubscriptionCallback(
   } finally {
     client.release();
   }
-        
+}
 async function initiateSubscriptionStk(
   app,
   pool,
