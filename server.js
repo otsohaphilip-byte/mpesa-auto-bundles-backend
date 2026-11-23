@@ -242,6 +242,15 @@ async function createAdditionalTables() {
       admin_buy_goods_till VARCHAR(30),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+        INSERT INTO platform_settings
+      (id, admin_buy_goods_till)
+    VALUES
+      (1, '1731432')
+    ON CONFLICT (id) DO UPDATE
+    SET admin_buy_goods_till = COALESCE(
+      platform_settings.admin_buy_goods_till,
+      EXCLUDED.admin_buy_goods_till
+    );
     CREATE TABLE IF NOT EXISTS mpesa_callback_events (
       id BIGSERIAL PRIMARY KEY,
       trans_id VARCHAR(100) UNIQUE NOT NULL,
