@@ -5,6 +5,7 @@ const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
 const { installOperations } = require("./operations");
 require("dotenv").config();
+const { installUssdDevices } = require("./ussd-devices");
 
 const app = express();
 
