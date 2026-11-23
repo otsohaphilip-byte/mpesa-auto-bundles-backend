@@ -10,10 +10,11 @@ const {
   installOperations,
   getSalesPaused,
   isWithinDailyWindow
-  const {
+} = require("./operations");
+
+const {
   installSubscriptionPayments
 } = require("./subscription-payments");
-} = require("./operations");
 
 require("dotenv").config();
 
