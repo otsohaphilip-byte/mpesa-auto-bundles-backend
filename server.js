@@ -263,6 +263,11 @@ async function createAdditionalTables() {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
   `);
+    await pool.query(`
+    ALTER TABLE resellers
+    ADD COLUMN IF NOT EXISTS payment_mode
+    VARCHAR(20) NOT NULL DEFAULT 'tokens';
+  `);
 }
 
 async function createFulfilmentTables() {
