@@ -867,11 +867,12 @@ function installSubscriptionCallback(app, pool) {
       } catch (error) {
         console.error("M-Pesa callback storage error:", error);
 
-        res.json({
-                  res.status(500).json({
+                res.status(500).json({
           ResultCode: 1,
           ResultDesc: "Callback storage failed."
         });
+      }
+    }
   );
 }
 function installSubscriptionStatusRoutes(
