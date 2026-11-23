@@ -237,7 +237,11 @@ async function createAdditionalTables() {
       active BOOLEAN NOT NULL DEFAULT TRUE,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
-
+    CREATE TABLE IF NOT EXISTS platform_settings (
+      id INTEGER PRIMARY KEY DEFAULT 1,
+      admin_buy_goods_till VARCHAR(30),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
     CREATE TABLE IF NOT EXISTS mpesa_callback_events (
       id BIGSERIAL PRIMARY KEY,
       trans_id VARCHAR(100) UNIQUE NOT NULL,
