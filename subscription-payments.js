@@ -532,10 +532,9 @@ async function initiateSubscriptionStk(
         initiationAttempts.set(resellerId, now);
 
         const resellerResult = await pool.query(
-          `SELECT id, phone, status
+                    `SELECT id, phone, status, payment_mode
            FROM resellers
            WHERE id = $1`,
-          [resellerId]
         );
 
         if (!resellerResult.rows.length) {
@@ -553,7 +552,12 @@ async function initiateSubscriptionStk(
             message: "Your reseller account is not active."
           });
         }
-
+        if (reseller.payment_mode !== "subscription") {
+          return res.status(403).json({
+            status: "ERROR",
+            message: "Select subscription mode before paying for a subscription."
+          });
+            }
         const phone = normalizeKenyanPhone(reseller.phone);
         const config = getDarajaConfig();
         const accessToken = await getAccessToken(config);
