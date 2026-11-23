@@ -901,11 +901,14 @@ function installSubscriptionStatusRoutes(
           [checkoutId, req.user.resellerId]
         );
 
-        if (!result.rows.length) {
+                if (!result.rows.length) {
           return res.status(404).json({
             status: "ERROR",
             message: "Payment record not found."
-                    if (result.rows[0].status === "pending") {
+          });
+        }
+
+        if (result.rows[0].status === "pending") {
           const callbackResult = await pool.query(
             `SELECT callback_payload
              FROM subscription_payment_callbacks
@@ -947,8 +950,6 @@ function installSubscriptionStatusRoutes(
             }
           }
           }
-          });
-        }
 
         res.json({
           status: "OK",
