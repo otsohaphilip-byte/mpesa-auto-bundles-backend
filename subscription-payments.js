@@ -891,7 +891,7 @@ function installSubscriptionStatusRoutes(
           req.params.checkoutRequestId || ""
         ).trim();
 
-        const result = await pool.query(
+        let result = await pool.query(
           `SELECT id, plan, amount, status,
                   mpesa_receipt, created_at, verified_at,
                   processing_note
@@ -905,6 +905,48 @@ function installSubscriptionStatusRoutes(
           return res.status(404).json({
             status: "ERROR",
             message: "Payment record not found."
+                    if (result.rows[0].status === "pending") {
+          const callbackResult = await pool.query(
+            `SELECT callback_payload
+             FROM subscription_payment_callbacks
+             WHERE checkout_request_id = $1`,
+            [checkoutId]
+          );
+
+          if (callbackResult.rows.length) {
+            try {
+              const queryResult =
+                await querySafaricomStk(checkoutId);
+
+              await pool.query(
+                `UPDATE subscription_payments
+                 SET query_payload = $2
+                 WHERE checkout_request_id = $1`,
+                [checkoutId, queryResult]
+              );
+
+              await processStoredSubscriptionCallback(
+                pool,
+                checkoutId
+              );
+
+              result = await pool.query(
+                `SELECT id, plan, amount, status,
+                        mpesa_receipt, created_at, verified_at,
+                        processing_note
+                 FROM subscription_payments
+                 WHERE checkout_request_id = $1
+                   AND reseller_id = $2`,
+                [checkoutId, req.user.resellerId]
+              );
+            } catch (retryError) {
+              console.error(
+                "Subscription verification retry error:",
+                retryError
+              );
+            }
+          }
+          }
           });
         }
 
