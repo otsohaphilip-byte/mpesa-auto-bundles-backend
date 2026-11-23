@@ -531,10 +531,11 @@ async function initiateSubscriptionStk(
 
         initiationAttempts.set(resellerId, now);
 
-        const resellerResult = await pool.query(
-                    `SELECT id, phone, status, payment_mode
+                const resellerResult = await pool.query(
+          `SELECT id, phone, status, payment_mode
            FROM resellers
            WHERE id = $1`,
+          [resellerId]
         );
 
         if (!resellerResult.rows.length) {
