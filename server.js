@@ -811,7 +811,56 @@ app.get(
     }
   }
 );
+app.put(
+  "/api/reseller/payment-mode",
+  authenticateToken,
+  requireReseller,
+  async (req, res) => {
+    try {
+      const paymentMode = String(
+        req.body.payment_mode || ""
+      ).trim().toLowerCase();
 
+      if (!["tokens", "subscription"].includes(paymentMode)) {
+        return sendError(
+          res,
+          400,
+          "Choose either tokens or subscription mode."
+        );
+      }
+
+      const result = await pool.query(
+        `UPDATE resellers
+         SET payment_mode = $1
+         WHERE id = $2
+           AND status = 'active'
+         RETURNING id, payment_mode`,
+        [paymentMode, req.user.resellerId]
+      );
+
+      if (!result.rows.length) {
+        return sendError(
+          res,
+          403,
+          "Active reseller account not found."
+        );
+      }
+
+      return res.json({
+        status: "SUCCESS",
+        message: "Payment mode updated successfully.",
+        payment_mode: result.rows[0].payment_mode
+      });
+    } catch (error) {
+      console.error("Payment mode update error:", error.message);
+      return sendError(
+        res,
+        500,
+        "Unable to update payment mode."
+      );
+    }
+  }
+);
 app.post(
   "/api/logout",
   authenticateToken,
