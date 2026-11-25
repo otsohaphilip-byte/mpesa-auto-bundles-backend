@@ -920,49 +920,45 @@ app.post(
           amount
         );
 
+        
         if (duplicate) {
           await client.query("ROLLBACK");
           return sendError(
             res,
-                  const result = await client.query(
-        `INSERT INTO offers (
-           reseller_id,
-           name,
-           product_type,
-           price,
-           bingwa_price,
-           safaricom_price,
-           bundle_code,
-           catalog_product_id,
-           approval_status,
-           active
-         )
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-         RETURNING *`,
-        [
-          resellerId,
-          String(name).trim(),
-          productResult.rows[0].product_type,
-          amount,
-          amount,
-          productResult.rows[0].safaricom_price,
-          productResult.rows[0].bundle_code || null,
-          catalog_product_id,
-          approvalStatus,
-          active
-        ]
-      );
-        [
-          resellerId,
-          String(name).trim(),
-          productResult.rows[0].product_type,
-          amount,
-          productResult.rows[0].bundle_code || null,
-          catalog_product_id,
-          approvalStatus,
-          active
-        ]
-      );
+            409,
+            "Another active approved offer already uses this payment amount."
+          );
+        }
+
+        const result = await client.query(
+          `INSERT INTO offers (
+             reseller_id,
+             name,
+             product_type,
+             price,
+             bingwa_price,
+             safaricom_price,
+             bundle_code,
+             catalog_product_id,
+             approval_status,
+             active
+           )
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+           RETURNING *`,
+          [
+            resellerId,
+            String(name).trim(),
+            productResult.rows[0].product_type,
+            amount,
+            amount,
+            productResult.rows[0].safaricom_price,
+            productResult.rows[0].bundle_code || null,
+            catalog_product_id,
+            approvalStatus,
+            active
+          ]
+        );
+        
 
       await client.query("COMMIT");
 
