@@ -365,7 +365,105 @@ async function installUssdDevices(
       }
     }
   );
+  // Allow registered gateway phones to claim one delivery job
+  app.post(
+    "/api/ussd/jobs/claim",
+    async (req, res) => {
+      const client = await pool.connect();
 
+      try {
+        const deviceToken = String(
+          req.headers["x-device-token"] || ""
+        );
+
+        if (!deviceToken) {
+          return res.status(401).json({
+            status: "ERROR",
+            message: "Gateway device token is required."
+          });
+        }
+
+        const tokenHash = crypto
+          .createHash("sha256")
+          .update(deviceToken)
+          .digest("hex");
+
+        const admin = await client.query(
+          `SELECT admin_phone
+           FROM admin_ussd_devices
+           WHERE device_token_hash = $1`,
+          [tokenHash]
+        );
+
+        let gatewayRole;
+        let gatewayId;
+
+        if (admin.rows.length > 0) {
+          gatewayRole = "admin";
+          gatewayId = admin.rows[0].admin_phone;
+        } else {
+          const reseller = await client.query(
+            `SELECT reseller_id
+             FROM reseller_ussd_devices
+             WHERE device_token_hash = $1`,
+            [tokenHash]
+          );
+
+          if (reseller.rows.length === 0) {
+            return res.status(401).json({
+              status: "ERROR",
+              message: "Invalid gateway device token."
+            });
+          }
+
+          gatewayRole = "reseller";
+          gatewayId = reseller.rows[0].reseller_id;
+        }
+
+        const result = await client.query(
+          `UPDATE delivery_jobs
+           SET status = 'claimed',
+               attempt_count = attempt_count + 1,
+               claimed_at = NOW(),
+               updated_at = NOW()
+           WHERE id = (
+             SELECT id
+             FROM delivery_jobs
+             WHERE status = 'queued'
+               AND gateway_role = $1
+               AND (
+                 ($1 = 'admin' AND admin_phone = $2)
+                 OR
+                 ($1 = 'reseller' AND reseller_id = $2)
+               )
+             ORDER BY created_at ASC
+             LIMIT 1
+             FOR UPDATE SKIP LOCKED
+           )
+           RETURNING id, gateway_role, reseller_id,
+                     admin_phone, offer_id, offer_name,
+                     destination_phone, amount, ussd_code`,
+          [gatewayRole, gatewayId]
+        );
+
+        res.json({
+          status: "SUCCESS",
+          job: result.rows[0] || null
+        });
+
+      } catch (error) {
+        console.error("Gateway job claim error:", error);
+
+        res.status(500).json({
+          status: "ERROR",
+          message: "Could not retrieve delivery job."
+        });
+
+      } finally {
+        client.release();
+      }
+    }
+  );
   console.log("Admin and reseller USSD gateway routes initialized.");
 }
 
