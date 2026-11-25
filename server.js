@@ -208,6 +208,39 @@ async function initializeDatabase() {
           ALTER TABLE product_catalog
       ADD COLUMN IF NOT EXISTS bingwa_price NUMERIC(12,2),
       ADD COLUMN IF NOT EXISTS safaricom_price NUMERIC(12,2);
+      INSERT INTO product_catalog
+(product_name, product_type, bundle_code, bingwa_price, safaricom_price, verified, active)
+VALUES
+('1GB - 1Hr', 'data', '*180*5*2*@*1*1#', 19, 20, FALSE, TRUE),
+('250MB - 24Hrs', 'data', '*180*5*2*@*2*1#', 20, 20, FALSE, TRUE),
+('1GB - 1Hr Tunukiwa', 'data', '*544*12*1*@*1#', 21, 20, FALSE, TRUE),
+('400MB - 7Days', 'data', '*180*5*2*@*4*1#', 49, 50, FALSE, TRUE),
+('750MBs_50SMS - 24Hrs', 'data', '*180*5*2*@*3*1#', 50, 50, FALSE, TRUE),
+('1,5Gb - 3hrs', 'data', '*180*5*2*@*7*1#', 52, 50, FALSE, TRUE),
+('2GB - 24Hr Tunukiwa', 'data', '*544*12*0*@*1*1#', 104, 100, FALSE, TRUE),
+('2,5 GB 30days', 'data', '*180*5*2*@*0*1*1#', 255, 255, FALSE, TRUE),
+('7GB 30 days', 'data', '*180*5*2*@*0*3*1#', 509, 500, FALSE, TRUE),
+('8GB + 400 mins 30 days', 'data', '*180*5*2*@*0*6*1#', 1006, 1000, FALSE, TRUE),
+('21 GB 3days', 'data', '*180*5*2*@*8*5*1#', 1009, 1000, FALSE, TRUE),
+
+('20SMS - 24Hrs', 'sms', '*188*@*1*1*@*1*2#', 5, 5, FALSE, TRUE),
+('200SMS - 24Hrs', 'sms', '*188*@*1*2*@*1*2#', 10, 10, FALSE, TRUE),
+('100 SMS 7days', 'sms', '*188*@*2*1*@*1*2#', 24, 20, FALSE, TRUE),
+('Unlimited SMS daily', 'sms', '*188*@*1*3*@*1*2#', 25, 250, FALSE, TRUE),
+('1000SMS - 7Days', 'sms', '**188*@*2*2*@*1*2#', 30, 30, FALSE, TRUE),
+('Unlimited SMS 7days', 'sms', '*188*@*2*3*@*1*2#', 54, 50, FALSE, TRUE),
+('1500SMS - 1Month', 'sms', '*188*@*3*1*@*1*2#', 101, 100, FALSE, TRUE),
+('3500 SMS 1 MONTH', 'sms', '*188*@*3*2*@*1*2#', 206, 200, FALSE, TRUE),
+
+('350mins - 2 hrs (mins + SMS)', 'minutes', '*444*5*1*3*@*2*1#', 22, 20, FALSE, TRUE),
+('500 mins - 2hrs ( mins + SMS)', 'minutes', '*444*5*2*3*@*2*1#', 33, 30, FALSE, TRUE),
+('350 mins Midnyut', 'minutes', '*444*5*3*3*@*2*1#', 53, 50, FALSE, TRUE),
+('1000 mins Midnyut', 'minutes', '*444*5*4*3*@*2*1#', 105, 100, FALSE, TRUE),
+('1500 mins 7days', 'minutes', '*444*5*5*3*@*2*1#', 255, 250, FALSE, TRUE),
+('3500 mins 7days', 'minutes', '*444*5*1*98*6*3*@*2*1#', 505, 500, FALSE, TRUE),
+('9000 mins 30 days', 'minutes', '*444*5*1*98*7*3*@*2*1#', 1010, 1000, FALSE, TRUE),
+('20000 min 30days', 'minutes', '*444*5*1*98*8*3*@*2*1#', 2020, 2000, FALSE, TRUE)
+ON CONFLICT (bundle_code) DO NOTHING;
 
     ALTER TABLE offers
       ADD COLUMN IF NOT EXISTS bingwa_price NUMERIC(12,2),
