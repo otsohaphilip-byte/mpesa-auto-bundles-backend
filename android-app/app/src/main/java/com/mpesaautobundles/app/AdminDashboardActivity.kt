@@ -991,6 +991,57 @@ section.addView(adminGatewayStatus)
     section.addView(registerButton)
     return section
 }
+private fun loadAdminGatewayStatus() {
+    Thread {
+        var message = "Unable to load Admin gateway status."
+
+        try {
+            val connection = openConnection(
+                "/api/admin/ussd/device"
+            )
+
+            val code = connection.responseCode
+            val stream = if (code in 200..299) {
+                connection.inputStream
+            } else {
+                connection.errorStream
+            }
+
+            val body = stream?.bufferedReader()?.use {
+                it.readText()
+            } ?: ""
+
+            connection.disconnect()
+
+            if (code !in 200..299) {
+                throw Exception("Gateway status request failed.")
+            }
+
+            val response = JSONObject(body)
+            val device = response.optJSONObject("device")
+
+            message = if (device == null) {
+                "No Admin gateway SIM registered."
+            } else {
+                val phone = device.optString("phone")
+                val name = device.optString("device_name")
+                val status = device.optString(
+                    "status",
+                    "offline"
+                ).uppercase()
+
+                "$name | $phone | $status"
+            }
+
+        } catch (e: Exception) {
+            message = "Could not load Admin gateway status."
+        }
+
+        runOnUiThread {
+            adminGatewayStatus.text = message
+        }
+    }.start()
+}
     private fun openConnection(path: String): HttpURLConnection {
         val url = URL(
             "https://mpesa-auto-bundles-backend.onrender.com$path"
