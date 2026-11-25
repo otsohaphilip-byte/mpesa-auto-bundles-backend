@@ -157,10 +157,12 @@ class LocalDeliveryDatabase(context: Context) :
         offerId: String,
         offerName: String,
         sellingPrice: Double,
-        ussdCode: String
+                ussdCode: String,
+        jobId: String
     ) {
         val values = ContentValues().apply {
             put("id", 1)
+                        put("job_id", jobId)
             put("role", role)
             put("owner_id", ownerId)
             put("destination_phone", phone)
@@ -195,6 +197,7 @@ class LocalDeliveryDatabase(context: Context) :
 
             return ContentValues().apply {
                 put("role", it.getString(it.getColumnIndexOrThrow("role")))
+                                put("job_id", it.getString(it.getColumnIndexOrThrow("job_id")))
                 put("owner_id", it.getString(it.getColumnIndexOrThrow("owner_id")))
                 put("destination_phone", it.getString(it.getColumnIndexOrThrow("destination_phone")))
                 put("offer_id", it.getString(it.getColumnIndexOrThrow("offer_id")))
