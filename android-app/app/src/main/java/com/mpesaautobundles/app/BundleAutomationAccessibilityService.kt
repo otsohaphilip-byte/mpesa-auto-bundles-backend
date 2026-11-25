@@ -87,6 +87,55 @@ class BundleAutomationAccessibilityService : AccessibilityService() {
                 connection?.disconnect()
             }
         }.start()
+            private fun sendResellerGatewayHeartbeat() {
+        Thread {
+            var connection: HttpURLConnection? = null
+
+            try {
+                val deviceToken = getSharedPreferences(
+                    "agent_gateway",
+                    MODE_PRIVATE
+                ).getString("device_token", "") ?: ""
+
+                if (deviceToken.isBlank()) {
+                    return@Thread
+                }
+
+                connection = URL(
+                    "https://mpesa-auto-bundles-backend.onrender.com/api/reseller/ussd/device/heartbeat"
+                ).openConnection() as HttpURLConnection
+
+                connection.requestMethod = "POST"
+                connection.connectTimeout = 20000
+                connection.readTimeout = 20000
+                connection.doOutput = true
+
+                connection.setRequestProperty(
+                    "X-Device-Token",
+                    deviceToken
+                )
+
+                connection.setRequestProperty(
+                    "Content-Type",
+                    "application/json"
+                )
+
+                connection.outputStream.use {
+                    it.write("{}".toByteArray(Charsets.UTF_8))
+                }
+
+                Log.i(
+                    TAG,
+                    "Reseller gateway heartbeat HTTP ${connection.responseCode}"
+                )
+
+            } catch (e: Exception) {
+                Log.e(TAG, "Reseller gateway heartbeat failed", e)
+            } finally {
+                connection?.disconnect()
+            }
+        }.start()
+            }
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
