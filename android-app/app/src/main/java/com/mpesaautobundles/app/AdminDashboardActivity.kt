@@ -70,6 +70,7 @@ class AdminDashboardActivity : AppCompatActivity() {
         contentLayout.addView(statusText)
         contentLayout.addView(createStatsGrid())
         contentLayout.addView(createCommissionSection())
+        contentLayout.addView(createAdminGatewaySection())
         contentLayout.addView(createQuickActions())
         contentLayout.addView(createRecentTransactions())
 
