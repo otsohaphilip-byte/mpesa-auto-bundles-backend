@@ -464,6 +464,134 @@ async function installUssdDevices(
       }
     }
   );
+    // Receive delivery result from a registered gateway
+  app.post(
+    "/api/ussd/jobs/result",
+    async (req, res) => {
+      try {
+        const deviceToken = String(
+          req.headers["x-device-token"] || ""
+        );
+
+        if (!deviceToken) {
+          return res.status(401).json({
+            status: "ERROR",
+            message: "Gateway device token is required."
+          });
+        }
+
+        const tokenHash = crypto
+          .createHash("sha256")
+          .update(deviceToken)
+          .digest("hex");
+
+        const admin = await pool.query(
+          `SELECT admin_phone
+           FROM admin_ussd_devices
+           WHERE device_token_hash = $1`,
+          [tokenHash]
+        );
+
+        let gatewayRole;
+        let gatewayId;
+
+        if (admin.rows.length > 0) {
+          gatewayRole = "admin";
+          gatewayId = admin.rows[0].admin_phone;
+        } else {
+          const reseller = await pool.query(
+            `SELECT reseller_id
+             FROM reseller_ussd_devices
+             WHERE device_token_hash = $1`,
+            [tokenHash]
+          );
+
+          if (reseller.rows.length === 0) {
+            return res.status(401).json({
+              status: "ERROR",
+              message: "Invalid gateway device token."
+            });
+          }
+
+          gatewayRole = "reseller";
+          gatewayId = reseller.rows[0].reseller_id;
+        }
+
+        const jobId = Number(req.body.job_id);
+        const resultStatus = String(
+          req.body.status || ""
+        ).toLowerCase();
+
+        const allowedStatuses = [
+          "success",
+          "failed",
+          "uncertain"
+        ];
+
+        if (
+          !Number.isSafeInteger(jobId) ||
+          jobId <= 0 ||
+          !allowedStatuses.includes(resultStatus)
+        ) {
+          return res.status(400).json({
+            status: "ERROR",
+            message: "Invalid job ID or delivery status."
+          });
+        }
+
+        const responseText = String(
+          req.body.safaricom_response || ""
+        ).slice(0, 2000);
+
+        const result = await pool.query(
+          `UPDATE delivery_jobs
+           SET status = $1,
+               last_error = CASE
+                 WHEN $1 = 'success' THEN NULL
+                 ELSE $2
+               END,
+               completed_at = NOW(),
+               updated_at = NOW()
+           WHERE id = $3
+             AND status IN ('claimed', 'running')
+             AND gateway_role = $4
+             AND (
+               ($4 = 'admin' AND admin_phone = $5::text)
+               OR
+               ($4 = 'reseller' AND reseller_id::text = $5::text)
+             )
+           RETURNING id, status`,
+          [
+            resultStatus,
+            responseText,
+            jobId,
+            gatewayRole,
+            gatewayId
+          ]
+        );
+
+        if (result.rows.length === 0) {
+          return res.status(404).json({
+            status: "ERROR",
+            message: "Job not found or not assigned to this gateway."
+          });
+        }
+
+        res.json({
+          status: "SUCCESS",
+          job: result.rows[0]
+        });
+
+      } catch (error) {
+        console.error("Gateway delivery result error:", error);
+
+        res.status(500).json({
+          status: "ERROR",
+          message: "Could not save delivery result."
+        });
+      }
+    }
+  );
   console.log("Admin and reseller USSD gateway routes initialized.");
 }
 
