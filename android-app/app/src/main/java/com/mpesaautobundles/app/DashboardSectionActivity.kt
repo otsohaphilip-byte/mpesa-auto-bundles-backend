@@ -294,10 +294,11 @@ class DashboardSectionActivity : Activity() {
             }
         }
     }
+    
     private fun showAddOfferDialog() {
         runRequest {
             val response = request("/api/catalog")
-            val catalog = response.optJSONArray("catalog")
+            val catalog = response.optJSONArray("products")
                 ?: JSONArray()
 
             runOnUiThread {
@@ -318,7 +319,9 @@ class DashboardSectionActivity : Activity() {
                     products.add(product)
 
                     labels.add(
-                        "${product.optString("name")} - KSh ${product.optString("price")}"
+                        "${product.optString("product_name")} - " +
+                            "Safaricom KSh ${product.optString("safaricom_price")} - " +
+                            "Bingwa KSh ${product.optString("bingwa_price")}"
                     )
                 }
 
@@ -332,30 +335,35 @@ class DashboardSectionActivity : Activity() {
             }
         }
     }
-        private fun showNewOfferPriceDialog(product: JSONObject) {
+
+    private fun showNewOfferPriceDialog(product: JSONObject) {
         val layout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(24, 12, 24, 8)
         }
 
-        val sellingPrice = EditText(this).apply {
-            hint = "Your selling price (KSh)"
-            inputType = 8194
-            setText(product.optString("price", ""))
-        }
-
+        val safaricomPrice = product.optString("safaricom_price", "0")
         val bingwaPrice = EditText(this).apply {
-            hint = "Your Bingwa purchase price (KSh)"
+            hint = "Your advertised Bingwa price (KSh)"
             inputType = 8194
             setText(product.optString("bingwa_price", ""))
         }
 
-        layout.addView(sellingPrice)
+        layout.addView(
+            makeText(
+                "Fixed Safaricom price: KSh $safaricomPrice",
+                16f,
+                grey
+            )
+        )
         layout.addView(bingwaPrice)
 
         val dialog = AlertDialog.Builder(this)
-            .setTitle(product.optString("name"))
-            .setMessage("Enter the prices for your own offer.")
+            .setTitle(product.optString("product_name"))
+            .setMessage(
+                "Set your Bingwa price. This is the exact amount " +
+                    "the payer must send to your Till."
+            )
             .setView(layout)
             .setPositiveButton("Create Offer", null)
             .setNegativeButton("Cancel", null)
@@ -364,16 +372,13 @@ class DashboardSectionActivity : Activity() {
         dialog.setOnShowListener {
             dialog.getButton(AlertDialog.BUTTON_POSITIVE)
                 .setOnClickListener {
-                    val price = sellingPrice.text.toString()
-                        .trim().toDoubleOrNull()
                     val bingwa = bingwaPrice.text.toString()
                         .trim().toDoubleOrNull()
 
-                    if (price == null || bingwa == null ||
-                        price <= 0 || bingwa <= 0) {
+                    if (bingwa == null || bingwa <= 0) {
                         Toast.makeText(
                             this,
-                            "Enter valid prices greater than zero.",
+                            "Enter a valid Bingwa price greater than zero.",
                             Toast.LENGTH_LONG
                         ).show()
                         return@setOnClickListener
@@ -381,7 +386,8 @@ class DashboardSectionActivity : Activity() {
 
                     val body = JSONObject()
                         .put("catalog_product_id", product.optLong("id"))
-                        .put("price", price)
+                        .put("name", product.optString("product_name"))
+                        .put("price", bingwa)
                         .put("bingwa_price", bingwa)
 
                     dialog.dismiss()
@@ -409,7 +415,8 @@ class DashboardSectionActivity : Activity() {
         }
 
         dialog.show()
-        }
+    }
+    
     private fun addOfferCard(offer: JSONObject) {
         val card = makeCard()
         val id = offer.optLong("id")
