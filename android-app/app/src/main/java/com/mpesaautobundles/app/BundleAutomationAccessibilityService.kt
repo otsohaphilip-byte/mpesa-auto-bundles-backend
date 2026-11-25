@@ -136,9 +136,64 @@ class BundleAutomationAccessibilityService : AccessibilityService() {
             }
             
             Log.i(TAG, "Likely USSD screen detected")
+            
+            if (activeDelivery != null) {
+                val menuText = readVisibleUssdMenu()
+
+                if (menuText.isNotBlank()) {
+                    getSharedPreferences("app_setup", MODE_PRIVATE)
+                        .edit()
+                        .putString("last_ussd_menu_text", menuText)
+                        .apply()
+
+                    Log.i(TAG, "USSD menu text captured for active delivery")
+                }
+            }
+            
         }
     }
 
+    private fun readVisibleUssdMenu(): String {
+        val root = rootInActiveWindow ?: return ""
+
+        val rootPackage = root.packageName?.toString() ?: ""
+        if (
+            !rootPackage.contains("phone", ignoreCase = true) &&
+            !rootPackage.contains("telephony", ignoreCase = true)
+        ) {
+            return ""
+        }
+
+        val result = StringBuilder()
+
+        fun collect(node: android.view.accessibility.AccessibilityNodeInfo?) {
+            if (
+                node == null ||
+                !node.isVisibleToUser ||
+                node.isPassword ||
+                node.isEditable ||
+                result.length >= 2000
+            ) return
+
+            val text = node.text?.toString()?.trim()
+            if (!text.isNullOrEmpty()) {
+                result.append(text).append('\n')
+            }
+
+            val description = node.contentDescription?.toString()?.trim()
+            if (!description.isNullOrEmpty()) {
+                result.append(description).append('\n')
+            }
+
+            for (i in 0 until node.childCount) {
+                collect(node.getChild(i))
+            }
+        }
+
+        collect(root)
+        return result.toString().take(2000)
+    }
+    
     override fun onInterrupt() {
         heartbeatHandler.removeCallbacks(heartbeatRunnable)
         Log.w(TAG, "Bundle automation service interrupted")
