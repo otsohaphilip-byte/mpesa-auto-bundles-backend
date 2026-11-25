@@ -22,7 +22,32 @@ class BundleAutomationAccessibilityService : AccessibilityService() {
             heartbeatHandler.postDelayed(this, HEARTBEAT_INTERVAL)
         }
     }
+    private val jobPollingHandler = Handler(Looper.getMainLooper())
 
+    @Volatile
+    private var jobPollingInProgress = false
+
+    private val jobPollingRunnable = object : Runnable {
+        override fun run() {
+            val adminToken = getSharedPreferences(
+                "admin_agent_gateway",
+                MODE_PRIVATE
+            ).getString("device_token", "") ?: ""
+
+            val resellerToken = getSharedPreferences(
+                "agent_gateway",
+                MODE_PRIVATE
+            ).getString("device_token", "") ?: ""
+
+            if (adminToken.isNotBlank()) {
+                claimAndStartGatewayJob("admin", "admin_agent_gateway")
+            } else if (resellerToken.isNotBlank()) {
+                claimAndStartGatewayJob("reseller", "agent_gateway")
+            }
+
+            jobPollingHandler.postDelayed(this, JOB_POLL_INTERVAL)
+        }
+    }
     override fun onServiceConnected() {
         super.onServiceConnected()
 
@@ -37,7 +62,8 @@ class BundleAutomationAccessibilityService : AccessibilityService() {
 
         heartbeatHandler.removeCallbacks(heartbeatRunnable)
         heartbeatHandler.post(heartbeatRunnable)
-
+        jobPollingHandler.removeCallbacks(jobPollingRunnable)
+        jobPollingHandler.post(jobPollingRunnable)
         Log.i(TAG, "Bundle automation service connected")
     }
 
