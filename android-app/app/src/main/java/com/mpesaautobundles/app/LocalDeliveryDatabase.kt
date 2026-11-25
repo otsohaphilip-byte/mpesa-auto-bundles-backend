@@ -61,7 +61,7 @@ class LocalDeliveryDatabase(context: Context) :
             createActiveDeliveryTable(db)
         }
 
-        if (oldVersion < 3) {
+        if (oldVersion >= 2 && oldVersion < 3) {
             db.execSQL(
                 "ALTER TABLE active_delivery ADD COLUMN job_id TEXT"
             )
