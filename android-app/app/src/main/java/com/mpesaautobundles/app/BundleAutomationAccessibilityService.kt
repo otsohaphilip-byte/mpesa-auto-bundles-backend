@@ -87,8 +87,9 @@ class BundleAutomationAccessibilityService : AccessibilityService() {
                 connection?.disconnect()
             }
         }.start()
-            private fun sendResellerGatewayHeartbeat() {
-        Thread {
+               }
+
+    private fun sendResellerGatewayHeartbeat() { 
             var connection: HttpURLConnection? = null
 
             try {
@@ -136,8 +137,7 @@ class BundleAutomationAccessibilityService : AccessibilityService() {
             }
         }.start()
             }
-    }
-
+    
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event == null) return
 
