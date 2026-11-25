@@ -85,6 +85,7 @@ class AdminDashboardActivity : AppCompatActivity() {
         loadDashboard()
         loadSalesStatus()
         loadAdminGatewayStatus()
+                sendAdminGatewayHeartbeat()
     }
 
     private fun createHeader(): View {
