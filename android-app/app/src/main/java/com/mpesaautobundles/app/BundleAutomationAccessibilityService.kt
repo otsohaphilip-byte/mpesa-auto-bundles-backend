@@ -117,6 +117,24 @@ class BundleAutomationAccessibilityService : AccessibilityService() {
                 )
                 .apply()
 
+            val activeDelivery =
+                LocalDeliveryDatabase(this).getActiveDelivery()
+
+            if (activeDelivery != null) {
+                val activeRole =
+                    activeDelivery.getAsString("role") ?: "unknown"
+
+                val activeOffer =
+                    activeDelivery.getAsString("offer_name") ?: "unknown"
+
+                Log.i(
+                    TAG,
+                    "USSD linked to active delivery: role=$activeRole, offer=$activeOffer"
+                )
+            } else {
+                Log.w(TAG, "USSD detected but no active delivery was saved")
+            }
+            
             Log.i(TAG, "Likely USSD screen detected")
         }
     }
