@@ -913,8 +913,9 @@ app.post(
       
       const isAdmin = req.user.role === "admin";
       const resellerId = isAdmin ? null : req.user.resellerId;
-      const approvalStatus = isAdmin ? "approved" : "pending";
-      const active = isAdmin;
+      
+      const approvalStatus = "approved";
+      const active = true;
 
       if (!isAdmin && !resellerId) {
         await client.query("ROLLBACK");
@@ -967,8 +968,6 @@ app.post(
           active
         ]
       );
-  
-        
 
       await client.query("COMMIT");
 
@@ -976,7 +975,10 @@ app.post(
         status: "OK",
         message: isAdmin
           ? "Offer created and approved."
-          : "Offer submitted for administrator approval.",
+          : "Your offer is now active.",
+        offer: result.rows[0]
+      });
+    
         offer: result.rows[0]
       });
     } catch (error) {
