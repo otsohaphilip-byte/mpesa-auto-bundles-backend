@@ -40,7 +40,7 @@ class BundleAutomationAccessibilityService : AccessibilityService() {
         Log.i(TAG, "Bundle automation service connected")
     }
 
-    private fun sendAdminGatewayHeartbeat() {
+        private fun sendAdminGatewayHeartbeat() {
         Thread {
             var connection: HttpURLConnection? = null
 
@@ -50,9 +50,7 @@ class BundleAutomationAccessibilityService : AccessibilityService() {
                     MODE_PRIVATE
                 ).getString("device_token", "") ?: ""
 
-                if (deviceToken.isBlank()) {
-                    return@Thread
-                }
+                if (deviceToken.isBlank()) return@Thread
 
                 connection = URL(
                     "https://mpesa-auto-bundles-backend.onrender.com/api/admin/ussd/device/heartbeat"
@@ -63,23 +61,14 @@ class BundleAutomationAccessibilityService : AccessibilityService() {
                 connection.readTimeout = 20000
                 connection.doOutput = true
 
-                connection.setRequestProperty(
-                    "X-Device-Token",
-                    deviceToken
-                )
-
-                connection.setRequestProperty(
-                    "Content-Type",
-                    "application/json"
-                )
+                connection.setRequestProperty("X-Device-Token", deviceToken)
+                connection.setRequestProperty("Content-Type", "application/json")
 
                 connection.outputStream.use {
                     it.write("{}".toByteArray(Charsets.UTF_8))
                 }
 
-                val code = connection.responseCode
-
-                Log.i(TAG, "Admin gateway heartbeat HTTP $code")
+                Log.i(TAG, "Admin gateway heartbeat HTTP ${connection.responseCode}")
 
             } catch (e: Exception) {
                 Log.e(TAG, "Admin gateway heartbeat failed", e)
@@ -87,9 +76,10 @@ class BundleAutomationAccessibilityService : AccessibilityService() {
                 connection?.disconnect()
             }
         }.start()
-               }
+    }
 
-    private fun sendResellerGatewayHeartbeat() { 
+    private fun sendResellerGatewayHeartbeat() {
+        Thread {
             var connection: HttpURLConnection? = null
 
             try {
@@ -98,9 +88,7 @@ class BundleAutomationAccessibilityService : AccessibilityService() {
                     MODE_PRIVATE
                 ).getString("device_token", "") ?: ""
 
-                if (deviceToken.isBlank()) {
-                    return@Thread
-                }
+                if (deviceToken.isBlank()) return@Thread
 
                 connection = URL(
                     "https://mpesa-auto-bundles-backend.onrender.com/api/reseller/ussd/device/heartbeat"
@@ -111,24 +99,14 @@ class BundleAutomationAccessibilityService : AccessibilityService() {
                 connection.readTimeout = 20000
                 connection.doOutput = true
 
-                connection.setRequestProperty(
-                    "X-Device-Token",
-                    deviceToken
-                )
-
-                connection.setRequestProperty(
-                    "Content-Type",
-                    "application/json"
-                )
+                connection.setRequestProperty("X-Device-Token", deviceToken)
+                connection.setRequestProperty("Content-Type", "application/json")
 
                 connection.outputStream.use {
                     it.write("{}".toByteArray(Charsets.UTF_8))
                 }
 
-                Log.i(
-                    TAG,
-                    "Reseller gateway heartbeat HTTP ${connection.responseCode}"
-                )
+                Log.i(TAG, "Reseller gateway heartbeat HTTP ${connection.responseCode}")
 
             } catch (e: Exception) {
                 Log.e(TAG, "Reseller gateway heartbeat failed", e)
@@ -136,7 +114,7 @@ class BundleAutomationAccessibilityService : AccessibilityService() {
                 connection?.disconnect()
             }
         }.start()
-            }
+    }
     
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event == null) return
