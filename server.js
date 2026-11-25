@@ -979,8 +979,6 @@ app.post(
         offer: result.rows[0]
       });
     
-        offer: result.rows[0]
-      });
     } catch (error) {
       try {
         await client.query("ROLLBACK");
