@@ -824,7 +824,166 @@ class AdminDashboardActivity : AppCompatActivity() {
             cornerRadius = radius * resources.displayMetrics.density
         }
     }
+private fun createAdminGatewaySection(): View {
+    val section = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        setPadding(16, 16, 16, 16)
+        background = roundedBackground(light, 14)
+    }
 
+    section.addView(
+        makeText("Admin Bingwa Agent SIM", 18f, dark, true)
+    )
+
+    section.addView(
+        makeText(
+            "Register the Safaricom SIM used by the Admin gateway phone.",
+            13f,
+            grey
+        ).apply {
+            setPadding(0, 8, 0, 12)
+        }
+    )
+
+    val registerButton = Button(this).apply {
+        text = "Register Admin Gateway SIM"
+        setTextColor(Color.WHITE)
+        setBackgroundColor(green)
+    }
+
+    registerButton.setOnClickListener {
+        val phoneInput = EditText(this).apply {
+            hint = "Safaricom number (07XXXXXXXX or 01XXXXXXXX)"
+            inputType = InputType.TYPE_CLASS_PHONE
+        }
+
+        val nameInput = EditText(this).apply {
+            hint = "Gateway device name"
+            setText("Admin Bingwa Gateway")
+        }
+
+        val form = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(24, 8, 24, 0)
+            addView(phoneInput)
+            addView(nameInput)
+        }
+
+        AlertDialog.Builder(this)
+            .setTitle("Register Admin Gateway")
+            .setView(form)
+            .setNegativeButton("CANCEL", null)
+            .setPositiveButton("REGISTER", null)
+            .create()
+            .apply {
+                setOnShowListener {
+                    getButton(AlertDialog.BUTTON_POSITIVE)
+                        .setOnClickListener {
+                            val phone = phoneInput.text.toString().trim()
+                            val deviceName = nameInput.text.toString().trim()
+
+                            if (!phone.matches(Regex("^(07|01)\\d{8}$"))) {
+                                phoneInput.error = "Enter a valid Kenyan number"
+                                return@setOnClickListener
+                            }
+
+                            if (deviceName.isBlank()) {
+                                nameInput.error = "Enter a device name"
+                                return@setOnClickListener
+                            }
+
+                            dismiss()
+
+                            Thread {
+                                try {
+                                    val connection = URL(
+                                        "https://mpesa-auto-bundles-backend.onrender.com/api/admin/ussd/device"
+                                    ).openConnection() as HttpURLConnection
+
+                                    connection.requestMethod = "POST"
+                                    connection.connectTimeout = 20000
+                                    connection.readTimeout = 20000
+                                    connection.doOutput = true
+                                    connection.setRequestProperty(
+                                        "Authorization",
+                                        "Bearer $adminToken"
+                                    )
+                                    connection.setRequestProperty(
+                                        "Content-Type",
+                                        "application/json"
+                                    )
+
+                                    val body = JSONObject()
+                                        .put("phone", phone)
+                                        .put("device_name", deviceName)
+                                        .toString()
+
+                                    connection.outputStream.use {
+                                        it.write(body.toByteArray(Charsets.UTF_8))
+                                    }
+
+                                    val code = connection.responseCode
+                                    val stream = if (code in 200..299) {
+                                        connection.inputStream
+                                    } else {
+                                        connection.errorStream
+                                    }
+
+                                    val responseBody = stream
+                                        ?.bufferedReader()
+                                        ?.use { it.readText() } ?: ""
+
+                                    connection.disconnect()
+
+                                    val response = JSONObject(responseBody)
+
+                                    if (code !in 200..299 ||
+                                        response.optString("status") != "SUCCESS"
+                                    ) {
+                                        throw Exception(
+                                            response.optString(
+                                                "message",
+                                                "Gateway registration failed."
+                                            )
+                                        )
+                                    }
+
+                                    val deviceToken = response.optString("device_token")
+
+                                    getSharedPreferences(
+                                        "admin_agent_gateway",
+                                        MODE_PRIVATE
+                                    ).edit()
+                                        .putString("device_token", deviceToken)
+                                        .putString("phone", phone)
+                                        .apply()
+
+                                    runOnUiThread {
+                                        Toast.makeText(
+                                            this@AdminDashboardActivity,
+                                            "Admin gateway registered successfully.",
+                                            Toast.LENGTH_LONG
+                                        ).show()
+                                    }
+                                } catch (e: Exception) {
+                                    runOnUiThread {
+                                        Toast.makeText(
+                                            this@AdminDashboardActivity,
+                                            e.message ?: "Registration failed.",
+                                            Toast.LENGTH_LONG
+                                        ).show()
+                                    }
+                                }
+                            }.start()
+                        }
+                }
+                show()
+            }
+    }
+
+    section.addView(registerButton)
+    return section
+}
     private fun openConnection(path: String): HttpURLConnection {
         val url = URL(
             "https://mpesa-auto-bundles-backend.onrender.com$path"
