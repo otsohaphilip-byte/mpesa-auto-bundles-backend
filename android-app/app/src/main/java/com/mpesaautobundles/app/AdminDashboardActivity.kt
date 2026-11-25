@@ -973,6 +973,7 @@ section.addView(adminGatewayStatus)
                                             Toast.LENGTH_LONG
                                         ).show()
                                     }
+                                    loadAdminGatewayStatus()
                                 } catch (e: Exception) {
                                     runOnUiThread {
                                         Toast.makeText(
