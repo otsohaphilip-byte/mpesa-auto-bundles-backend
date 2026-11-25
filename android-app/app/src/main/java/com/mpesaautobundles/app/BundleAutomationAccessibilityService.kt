@@ -17,6 +17,7 @@ class BundleAutomationAccessibilityService : AccessibilityService() {
     private val heartbeatRunnable = object : Runnable {
         override fun run() {
             sendAdminGatewayHeartbeat()
+                        sendResellerGatewayHeartbeat()
             heartbeatHandler.postDelayed(this, HEARTBEAT_INTERVAL)
         }
     }
