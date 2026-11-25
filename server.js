@@ -205,6 +205,13 @@ async function initializeDatabase() {
     ALTER TABLE offers
       ADD COLUMN IF NOT EXISTS approval_status VARCHAR(20)
       DEFAULT 'pending';
+          ALTER TABLE product_catalog
+      ADD COLUMN IF NOT EXISTS bingwa_price NUMERIC(12,2),
+      ADD COLUMN IF NOT EXISTS safaricom_price NUMERIC(12,2);
+
+    ALTER TABLE offers
+      ADD COLUMN IF NOT EXISTS bingwa_price NUMERIC(12,2),
+      ADD COLUMN IF NOT EXISTS safaricom_price NUMERIC(12,2);
       ALTER TABLE resellers
   ADD COLUMN IF NOT EXISTS email VARCHAR(150);
 
