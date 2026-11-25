@@ -141,6 +141,7 @@ class LocalDeliveryDatabase(context: Context) :
             "local_id = ?",
             arrayOf(localId)
         )
+    }
         
     fun saveActiveDelivery(
         role: String,
@@ -206,6 +207,5 @@ class LocalDeliveryDatabase(context: Context) :
         )
     }
     
-    }
     }
     
