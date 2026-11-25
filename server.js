@@ -230,6 +230,35 @@ ALTER TABLE resellers
   received_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+    CREATE TABLE IF NOT EXISTS delivery_jobs (
+      id BIGSERIAL PRIMARY KEY,
+      payment_receipt VARCHAR(50) UNIQUE NOT NULL,
+      gateway_role VARCHAR(20) NOT NULL
+        CHECK (gateway_role IN ('admin', 'reseller')),
+      reseller_id BIGINT REFERENCES resellers(id),
+      admin_phone VARCHAR(20),
+      offer_id BIGINT REFERENCES offers(id),
+      offer_name VARCHAR(150) NOT NULL,
+      destination_phone VARCHAR(20) NOT NULL,
+      amount NUMERIC(12,2) NOT NULL,
+      ussd_code VARCHAR(150) NOT NULL,
+      status VARCHAR(20) NOT NULL DEFAULT 'queued'
+        CHECK (status IN (
+          'queued', 'claimed', 'running',
+          'success', 'failed', 'uncertain'
+        )),
+      attempt_count INTEGER NOT NULL DEFAULT 0,
+      last_error TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      claimed_at TIMESTAMPTZ,
+      completed_at TIMESTAMPTZ
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_delivery_jobs_gateway
+      ON delivery_jobs(gateway_role, reseller_id, admin_phone, status);
+      
+
     CREATE INDEX IF NOT EXISTS idx_orders_reseller
       ON orders(reseller_id);
 
