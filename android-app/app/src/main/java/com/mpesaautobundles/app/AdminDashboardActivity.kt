@@ -33,6 +33,7 @@ class AdminDashboardActivity : AppCompatActivity() {
     private lateinit var contentLayout: LinearLayout
     private lateinit var statusText: TextView
         private lateinit var salesIndicator: TextView
+    private lateinit var adminGatewayStatus: TextView
     private var adminToken = ""
 
     override fun onCreate(savedInstanceState: Bundle?) {
