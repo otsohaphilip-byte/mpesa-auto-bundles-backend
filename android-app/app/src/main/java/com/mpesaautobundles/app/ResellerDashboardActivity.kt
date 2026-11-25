@@ -738,6 +738,38 @@ root.addView(createBottomNavigation())
                 setMargins(0, dp(3), 0, dp(3))
             }
         )
+                val requestPermissionsButton = Button(this).apply {
+            text = "REQUEST REQUIRED PERMISSIONS"
+            setTextColor(Color.WHITE)
+            setBackgroundColor(green)
+
+            setOnClickListener {
+                val requiredPermissions = mutableListOf(
+                    Manifest.permission.READ_SMS,
+                    Manifest.permission.RECEIVE_SMS,
+                    Manifest.permission.READ_PHONE_STATE,
+                    Manifest.permission.CALL_PHONE
+                )
+
+                if (Build.VERSION.SDK_INT >= 33) {
+                    requiredPermissions.add(
+                        Manifest.permission.POST_NOTIFICATIONS
+                    )
+                }
+
+                requestPermissions(
+                    requiredPermissions.toTypedArray(),
+                    1001
+                )
+            }
+        }
+
+        section.addView(
+            requestPermissionsButton,
+            LinearLayout.LayoutParams(-1, dp(50)).apply {
+                setMargins(0, dp(10), 0, dp(6))
+            }
+        )
 
         val appSettingsButton = Button(this).apply {
             text = "OPEN APP PERMISSION SETTINGS"
