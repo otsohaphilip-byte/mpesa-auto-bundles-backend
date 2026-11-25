@@ -267,7 +267,13 @@ async function installUssdDevices(
     async (req, res) => {
       try {
         const result = await pool.query(
-          `SELECT id, phone, device_name, status,
+                    `SELECT id, phone, device_name,
+                  CASE
+                    WHEN last_seen IS NOT NULL
+                     AND last_seen >= NOW() - INTERVAL '10 minutes'
+                    THEN 'online'
+                    ELSE 'offline'
+                  END AS status,
                   airtime_balance, last_seen, created_at
            FROM admin_ussd_devices
            WHERE admin_phone = $1`,
