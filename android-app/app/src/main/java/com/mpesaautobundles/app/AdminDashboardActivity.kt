@@ -1027,12 +1027,17 @@ private fun loadAdminGatewayStatus() {
             } else {
                 val phone = device.optString("phone")
                 val name = device.optString("device_name")
+                val balance = if (device.isNull("airtime_balance")) {
+    "Not available"
+} else {
+    device.optString("airtime_balance")
+                }
                 val status = device.optString(
                     "status",
                     "offline"
                 ).uppercase()
 
-                "$name | $phone | $status"
+                "$name | $phone | $status | Airtime: KSh $balance"
             }
 
         } catch (e: Exception) {
