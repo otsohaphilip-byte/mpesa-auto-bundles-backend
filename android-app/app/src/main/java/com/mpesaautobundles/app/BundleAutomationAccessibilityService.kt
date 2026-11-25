@@ -1,6 +1,8 @@
 package com.mpesaautobundles.app
 
 import android.accessibilityservice.AccessibilityService
+import android.content.Intent
+import android.net.Uri
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
@@ -192,6 +194,44 @@ class BundleAutomationAccessibilityService : AccessibilityService() {
 
         collect(root)
         return result.toString().take(2000)
+    }
+    
+    private fun launchUssdCall(ussdCode: String): Boolean {
+        val code = ussdCode.trim()
+
+        if (
+            !code.startsWith("*") ||
+            !code.endsWith("#") ||
+            code.any {
+                !it.isDigit() && it != '*' && it != '#'
+            }
+        ) {
+            Log.e(TAG, "Invalid USSD code")
+            return false
+        }
+
+        if (
+            checkSelfPermission(android.Manifest.permission.CALL_PHONE) !=
+            android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) {
+            Log.e(TAG, "CALL_PHONE permission not granted")
+            return false
+        }
+
+        return try {
+            val intent = Intent(Intent.ACTION_CALL).apply {
+                data = Uri.parse("tel:${Uri.encode(code)}")
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+
+            startActivity(intent)
+            Log.i(TAG, "USSD call launched")
+            true
+
+        } catch (e: Exception) {
+            Log.e(TAG, "Could not launch USSD call", e)
+            false
+        }
     }
     
     override fun onInterrupt() {
