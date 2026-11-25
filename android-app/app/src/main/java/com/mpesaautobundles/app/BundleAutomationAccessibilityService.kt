@@ -146,6 +146,263 @@ class BundleAutomationAccessibilityService : AccessibilityService() {
         role: String,
         preferencesName: String
     ) {
+            
+        if (jobPollingInProgress) return
+        jobPollingInProgress = true
+
+        Thread {
+            var connection: HttpURLConnection? = null
+
+            try {
+                if (LocalDeliveryDatabase(this).getActiveDelivery() != null) {
+                    return@Thread
+                }
+
+                val deviceToken = getSharedPreferences(
+                    preferencesName,
+                    MODE_PRIVATE
+                ).getString("device_token", "") ?: ""
+
+                if (deviceToken.isBlank()) return@Thread
+
+                connection = URL(
+                    "https://mpesa-auto-bundles-backend.onrender.com/api/ussd/jobs/claim"
+                ).openConnection() as HttpURLConnection
+
+                connection.requestMethod = "POST"
+                connection.connectTimeout = 15000
+                connection.readTimeout = 15000
+                connection.doOutput = true
+
+                connection.setRequestProperty("X-Device-Token", deviceToken)
+                connection.setRequestProperty("Content-Type", "application/json")
+
+                connection.outputStream.use {
+                    it.write("{}".toByteArray(Charsets.UTF_8))
+                }
+
+                if (connection.responseCode != 200) {
+                    Log.e(TAG, "Job claim failed: HTTP ${connection.responseCode}")
+                    return@Thread
+                }
+
+                val response = connection.inputStream
+                    .bufferedReader()
+                    .use { it.readText() }
+
+                val job = JSONObject(response).optJSONObject("job")
+                    ?: return@Thread
+
+                val jobId = job.optString("id", "")
+                val jobRole = job.optString("gateway_role", "")
+                val ownerId = if (role == "admin") {
+                    job.optString("admin_phone", "")
+                } else {
+                    job.optString("reseller_id", "")
+                }
+
+                val phone = job.optString("destination_phone", "")
+                val offerId = job.optString("offer_id", "")
+                val offerName = job.optString("offer_name", "")
+                val amount = job.optDouble("amount", -1.0)
+                val ussdCode = job.optString("ussd_code", "")
+
+                if (
+                    jobId.isBlank() ||
+                    jobRole != role ||
+                    ownerId.isBlank() ||
+                    phone.isBlank() ||
+                    offerName.isBlank() ||
+                    amount < 0 ||
+                    ussdCode.isBlank()
+                ) {
+                    Log.e(TAG, "Claimed job has incomplete or mismatched details")
+                    return@Thread
+                }
+
+                LocalDeliveryDatabase(this).saveActiveDelivery(
+                    role,
+                    ownerId,
+                    phone,
+                    offerId,
+                    offerName,
+                    amount,
+                    ussdCode,
+                    jobId
+                )
+
+                Log.i(TAG, "Saved delivery job $jobId locally")
+
+                if (!launchUssdCall(ussdCode)) {
+                    Log.e(TAG, "Could not launch USSD for job $jobId")
+                }
+
+            } catch (e: Exception) {
+                Log.e(TAG, "Gateway job polling failed", e)
+            } finally {
+                connection?.disconnect()
+                jobPollingInProgress = false
+            }
+        }.start()
+    }
+
+    override fun onAccessibilityEvent(event: AccessibilityEvent?) {
+        if (event == null) return
+
+        val packageName = event.packageName?.toString() ?: return
+        val className = event.className?.toString() ?: ""
+
+        val isPhoneScreen =
+            packageName.contains("phone", ignoreCase = true) ||
+            packageName.contains("telephony", ignoreCase = true)
+
+        if (!isPhoneScreen) return
+
+        val eventText = event.text
+            .joinToString(" ")
+            .lowercase()
+
+        val isLikelyUssd =
+            eventText.contains("ussd") ||
+            eventText.contains("safaricom") ||
+            className.contains("alertdialog", ignoreCase = true)
+
+        if (isLikelyUssd) {
+            getSharedPreferences("app_setup", MODE_PRIVATE)
+                .edit()
+                .putBoolean("ussd_screen_detected", true)
+                .putLong(
+                    "ussd_screen_detected_at",
+                    System.currentTimeMillis()
+                )
+                .apply()
+
+            val activeDelivery =
+                LocalDeliveryDatabase(this).getActiveDelivery()
+
+            if (activeDelivery != null) {
+                val activeRole =
+                    activeDelivery.getAsString("role") ?: "unknown"
+
+                val activeOffer =
+                    activeDelivery.getAsString("offer_name") ?: "unknown"
+
+                Log.i(
+                    TAG,
+                    "USSD linked to active delivery: role=$activeRole, offer=$activeOffer"
+                )
+            } else {
+                Log.w(TAG, "USSD detected but no active delivery was saved")
+            }
+
+            Log.i(TAG, "Likely USSD screen detected")
+
+            if (activeDelivery != null) {
+                val menuText = readVisibleUssdMenu()
+
+                if (menuText.isNotBlank()) {
+                    getSharedPreferences("app_setup", MODE_PRIVATE)
+                        .edit()
+                        .putString("last_ussd_menu_text", menuText)
+                        .apply()
+
+                    Log.i(TAG, "USSD menu text captured for active delivery")
+                }
+            }
+        }
+    }
+
+    private fun readVisibleUssdMenu(): String {
+        val root = rootInActiveWindow ?: return ""
+
+        val rootPackage = root.packageName?.toString() ?: ""
+        if (
+            !rootPackage.contains("phone", ignoreCase = true) &&
+            !rootPackage.contains("telephony", ignoreCase = true)
+        ) {
+            return ""
+        }
+
+        val result = StringBuilder()
+
+        fun collect(node: android.view.accessibility.AccessibilityNodeInfo?) {
+            if (
+                node == null ||
+                !node.isVisibleToUser ||
+                node.isPassword ||
+                node.isEditable ||
+                result.length >= 2000
+            ) return
+
+            val text = node.text?.toString()?.trim()
+            if (!text.isNullOrEmpty()) {
+                result.append(text).append('\n')
+            }
+
+            val description = node.contentDescription?.toString()?.trim()
+            if (!description.isNullOrEmpty()) {
+                result.append(description).append('\n')
+            }
+
+            for (i in 0 until node.childCount) {
+                collect(node.getChild(i))
+            }
+        }
+
+        collect(root)
+        return result.toString().take(2000)
+    }
+
+    private fun launchUssdCall(ussdCode: String): Boolean {
+        val code = ussdCode.trim()
+
+        if (
+            !code.startsWith("*") ||
+            !code.endsWith("#") ||
+            code.any {
+                !it.isDigit() && it != '*' && it != '#'
+            }
+        ) {
+            Log.e(TAG, "Invalid USSD code")
+            return false
+        }
+
+        if (
+            checkSelfPermission(android.Manifest.permission.CALL_PHONE) !=
+            android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) {
+            Log.e(TAG, "CALL_PHONE permission not granted")
+            return false
+        }
+
+        return try {
+            val intent = Intent(Intent.ACTION_CALL).apply {
+                data = Uri.parse("tel:${Uri.encode(code)}")
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+
+            startActivity(intent)
+            Log.i(TAG, "USSD call launched")
+            true
+
+        } catch (e: Exception) {
+            Log.e(TAG, "Could not launch USSD call", e)
+            false
+        }
+    }
+
+    override fun onInterrupt() {
+        heartbeatHandler.removeCallbacks(heartbeatRunnable)
+        jobPollingHandler.removeCallbacks(jobPollingRunnable)
+        Log.w(TAG, "Bundle automation service interrupted")
+    }
+
+    override fun onDestroy() {
+        heartbeatHandler.removeCallbacks(heartbeatRunnable)
+        jobPollingHandler.removeCallbacks(jobPollingRunnable)
+        super.onDestroy()
+    }
+    
         Thread {
             var connection: HttpURLConnection? = null
 
@@ -259,141 +516,7 @@ class BundleAutomationAccessibilityService : AccessibilityService() {
         val isLikelyUssd =
             eventText.contains("ussd") ||
             eventText.contains("safaricom") ||
-            className.contains("alertdialog", ignoreCase = true)
 
-        if (isLikelyUssd) {
-            getSharedPreferences("app_setup", MODE_PRIVATE)
-                .edit()
-                .putBoolean("ussd_screen_detected", true)
-                .putLong(
-                    "ussd_screen_detected_at",
-                    System.currentTimeMillis()
-                )
-                .apply()
-
-            val activeDelivery =
-                LocalDeliveryDatabase(this).getActiveDelivery()
-
-            if (activeDelivery != null) {
-                val activeRole =
-                    activeDelivery.getAsString("role") ?: "unknown"
-
-                val activeOffer =
-                    activeDelivery.getAsString("offer_name") ?: "unknown"
-
-                Log.i(
-                    TAG,
-                    "USSD linked to active delivery: role=$activeRole, offer=$activeOffer"
-                )
-            } else {
-                Log.w(TAG, "USSD detected but no active delivery was saved")
-            }
-            
-            Log.i(TAG, "Likely USSD screen detected")
-            
-            if (activeDelivery != null) {
-                val menuText = readVisibleUssdMenu()
-
-                if (menuText.isNotBlank()) {
-                    getSharedPreferences("app_setup", MODE_PRIVATE)
-                        .edit()
-                        .putString("last_ussd_menu_text", menuText)
-                        .apply()
-
-                    Log.i(TAG, "USSD menu text captured for active delivery")
-                }
-            }
-            
-        }
-    }
-
-    private fun readVisibleUssdMenu(): String {
-        val root = rootInActiveWindow ?: return ""
-
-        val rootPackage = root.packageName?.toString() ?: ""
-        if (
-            !rootPackage.contains("phone", ignoreCase = true) &&
-            !rootPackage.contains("telephony", ignoreCase = true)
-        ) {
-            return ""
-        }
-
-        val result = StringBuilder()
-
-        fun collect(node: android.view.accessibility.AccessibilityNodeInfo?) {
-            if (
-                node == null ||
-                !node.isVisibleToUser ||
-                node.isPassword ||
-                node.isEditable ||
-                result.length >= 2000
-            ) return
-
-            val text = node.text?.toString()?.trim()
-            if (!text.isNullOrEmpty()) {
-                result.append(text).append('\n')
-            }
-
-            val description = node.contentDescription?.toString()?.trim()
-            if (!description.isNullOrEmpty()) {
-                result.append(description).append('\n')
-            }
-
-            for (i in 0 until node.childCount) {
-                collect(node.getChild(i))
-            }
-        }
-
-        collect(root)
-        return result.toString().take(2000)
-    }
-    
-    private fun launchUssdCall(ussdCode: String): Boolean {
-        val code = ussdCode.trim()
-
-        if (
-            !code.startsWith("*") ||
-            !code.endsWith("#") ||
-            code.any {
-                !it.isDigit() && it != '*' && it != '#'
-            }
-        ) {
-            Log.e(TAG, "Invalid USSD code")
-            return false
-        }
-
-        if (
-            checkSelfPermission(android.Manifest.permission.CALL_PHONE) !=
-            android.content.pm.PackageManager.PERMISSION_GRANTED
-        ) {
-            Log.e(TAG, "CALL_PHONE permission not granted")
-            return false
-        }
-
-        return try {
-            val intent = Intent(Intent.ACTION_CALL).apply {
-                data = Uri.parse("tel:${Uri.encode(code)}")
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            }
-
-            startActivity(intent)
-            Log.i(TAG, "USSD call launched")
-            true
-
-        } catch (e: Exception) {
-            Log.e(TAG, "Could not launch USSD call", e)
-            false
-        }
-    }
-    
-    override fun onInterrupt() {
-        heartbeatHandler.removeCallbacks(heartbeatRunnable)
-        Log.w(TAG, "Bundle automation service interrupted")
-    }
-
-    override fun onDestroy() {
-        heartbeatHandler.removeCallbacks(heartbeatRunnable)
-        super.onDestroy()
     }
 
     companion object {
