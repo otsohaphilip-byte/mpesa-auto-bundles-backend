@@ -432,9 +432,9 @@ async function installUssdDevices(
              WHERE status = 'queued'
                AND gateway_role = $1
                AND (
-                 ($1 = 'admin' AND admin_phone = $2)
-                 OR
-                 ($1 = 'reseller' AND reseller_id = $2)
+                                   ($1 = 'admin' AND admin_phone = $2::text)
+                  OR
+                  ($1 = 'reseller' AND reseller_id::text = $2::text)
                )
              ORDER BY created_at ASC
              LIMIT 1
