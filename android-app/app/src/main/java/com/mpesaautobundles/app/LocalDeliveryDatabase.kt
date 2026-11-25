@@ -7,8 +7,9 @@ import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
 import java.util.UUID
 
+
 class LocalDeliveryDatabase(context: Context) :
-    SQLiteOpenHelper(context, "mab_local_deliveries.db", null, 1) {
+    SQLiteOpenHelper(context, "mab_local_deliveries.db", null, 2) {
 
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL(
@@ -28,6 +29,26 @@ class LocalDeliveryDatabase(context: Context) :
             )
             """.trimIndent()
         )
+
+        createActiveDeliveryTable(db)
+    }
+
+    private fun createActiveDeliveryTable(db: SQLiteDatabase) {
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS active_delivery (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                role TEXT NOT NULL,
+                owner_id TEXT NOT NULL,
+                destination_phone TEXT NOT NULL,
+                offer_id TEXT,
+                offer_name TEXT NOT NULL,
+                selling_price REAL NOT NULL,
+                ussd_code TEXT NOT NULL,
+                started_at INTEGER NOT NULL
+            )
+            """.trimIndent()
+        )
     }
 
     override fun onUpgrade(
@@ -35,8 +56,11 @@ class LocalDeliveryDatabase(context: Context) :
         oldVersion: Int,
         newVersion: Int
     ) {
-        // Preserve existing delivery records during upgrades.
+        if (oldVersion < 2) {
+            createActiveDeliveryTable(db)
+        }
     }
+    
 
     fun saveDeliveryResult(
         role: String,
