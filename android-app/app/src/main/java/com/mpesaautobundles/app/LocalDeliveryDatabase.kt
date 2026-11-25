@@ -141,6 +141,71 @@ class LocalDeliveryDatabase(context: Context) :
             "local_id = ?",
             arrayOf(localId)
         )
+        
+    fun saveActiveDelivery(
+        role: String,
+        ownerId: String,
+        phone: String,
+        offerId: String,
+        offerName: String,
+        sellingPrice: Double,
+        ussdCode: String
+    ) {
+        val values = ContentValues().apply {
+            put("id", 1)
+            put("role", role)
+            put("owner_id", ownerId)
+            put("destination_phone", phone)
+            put("offer_id", offerId)
+            put("offer_name", offerName)
+            put("selling_price", sellingPrice)
+            put("ussd_code", ussdCode)
+            put("started_at", System.currentTimeMillis())
+        }
+
+        writableDatabase.insertWithOnConflict(
+            "active_delivery",
+            null,
+            values,
+            SQLiteDatabase.CONFLICT_REPLACE
+        )
+    }
+
+    fun getActiveDelivery(): ContentValues? {
+        val cursor = readableDatabase.query(
+            "active_delivery",
+            null,
+            "id = ?",
+            arrayOf("1"),
+            null,
+            null,
+            null
+        )
+
+        cursor.use {
+            if (!it.moveToFirst()) return null
+
+            return ContentValues().apply {
+                put("role", it.getString(it.getColumnIndexOrThrow("role")))
+                put("owner_id", it.getString(it.getColumnIndexOrThrow("owner_id")))
+                put("destination_phone", it.getString(it.getColumnIndexOrThrow("destination_phone")))
+                put("offer_id", it.getString(it.getColumnIndexOrThrow("offer_id")))
+                put("offer_name", it.getString(it.getColumnIndexOrThrow("offer_name")))
+                put("selling_price", it.getDouble(it.getColumnIndexOrThrow("selling_price")))
+                put("ussd_code", it.getString(it.getColumnIndexOrThrow("ussd_code")))
+                put("started_at", it.getLong(it.getColumnIndexOrThrow("started_at")))
+            }
+        }
+    }
+
+    fun clearActiveDelivery() {
+        writableDatabase.delete(
+            "active_delivery",
+            "id = ?",
+            arrayOf("1")
+        )
+    }
+    
     }
     }
     
