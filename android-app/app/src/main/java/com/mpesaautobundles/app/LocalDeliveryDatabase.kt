@@ -9,7 +9,7 @@ import java.util.UUID
 
 
 class LocalDeliveryDatabase(context: Context) :
-    SQLiteOpenHelper(context, "mab_local_deliveries.db", null, 2) {
+    SQLiteOpenHelper(context, "mab_local_deliveries.db", null, 3)
 
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL(
@@ -38,6 +38,7 @@ class LocalDeliveryDatabase(context: Context) :
             """
             CREATE TABLE IF NOT EXISTS active_delivery (
                 id INTEGER PRIMARY KEY CHECK (id = 1),
+                                job_id TEXT,
                 role TEXT NOT NULL,
                 owner_id TEXT NOT NULL,
                 destination_phone TEXT NOT NULL,
@@ -51,7 +52,7 @@ class LocalDeliveryDatabase(context: Context) :
         )
     }
 
-    override fun onUpgrade(
+        override fun onUpgrade(
         db: SQLiteDatabase,
         oldVersion: Int,
         newVersion: Int
@@ -59,7 +60,13 @@ class LocalDeliveryDatabase(context: Context) :
         if (oldVersion < 2) {
             createActiveDeliveryTable(db)
         }
-    }
+
+        if (oldVersion < 3) {
+            db.execSQL(
+                "ALTER TABLE active_delivery ADD COLUMN job_id TEXT"
+            )
+        }
+        }
     
 
     fun saveDeliveryResult(
