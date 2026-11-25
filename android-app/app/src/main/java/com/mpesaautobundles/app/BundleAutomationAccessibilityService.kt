@@ -406,5 +406,6 @@ class BundleAutomationAccessibilityService : AccessibilityService() {
     companion object {
         private const val TAG = "MAB_Automation"
         private const val HEARTBEAT_INTERVAL = 5 * 60 * 1000L
+                private const val JOB_POLL_INTERVAL = 15 * 1000L
     }
 }
