@@ -365,6 +365,76 @@ async function installUssdDevices(
       }
     }
   );
+    // Receive Reseller gateway phone heartbeat
+  app.post(
+    "/api/reseller/ussd/device/heartbeat",
+    async (req, res) => {
+      try {
+        const deviceToken = String(
+          req.headers["x-device-token"] || ""
+        );
+
+        if (!deviceToken) {
+          return res.status(401).json({
+            status: "ERROR",
+            message: "Gateway device token is required."
+          });
+        }
+
+        const tokenHash = crypto
+          .createHash("sha256")
+          .update(deviceToken)
+          .digest("hex");
+
+        let airtimeBalance = null;
+
+        if (req.body.airtime_balance !== undefined) {
+          airtimeBalance = Number(req.body.airtime_balance);
+
+          if (
+            !Number.isFinite(airtimeBalance) ||
+            airtimeBalance < 0
+          ) {
+            return res.status(400).json({
+              status: "ERROR",
+              message: "Invalid airtime balance."
+            });
+          }
+        }
+
+        const result = await pool.query(
+          `UPDATE reseller_ussd_devices
+           SET status = 'online',
+               airtime_balance = COALESCE($2, airtime_balance),
+               last_seen = NOW(),
+               updated_at = NOW()
+           WHERE device_token_hash = $1
+           RETURNING phone, status, airtime_balance, last_seen`,
+          [tokenHash, airtimeBalance]
+        );
+
+        if (result.rows.length === 0) {
+          return res.status(401).json({
+            status: "ERROR",
+            message: "Invalid gateway device token."
+          });
+        }
+
+        res.json({
+          status: "SUCCESS",
+          device: result.rows[0]
+        });
+
+      } catch (error) {
+        console.error("Reseller gateway heartbeat error:", error);
+
+        res.status(500).json({
+          status: "ERROR",
+          message: "Could not update Reseller gateway status."
+        });
+      }
+    }
+  );
   // Allow registered gateway phones to claim one delivery job
   app.post(
     "/api/ussd/jobs/claim",
