@@ -84,6 +84,7 @@ class AdminDashboardActivity : AppCompatActivity() {
                 setContentView(root)
         loadDashboard()
         loadSalesStatus()
+        loadAdminGatewayStatus()
     }
 
     private fun createHeader(): View {
