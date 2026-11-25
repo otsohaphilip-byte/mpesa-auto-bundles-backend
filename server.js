@@ -1413,12 +1413,13 @@ const PORT = process.env.PORT || 3000;
 
 initializeDatabase()
   .then(async () => {
-    await installUssdDevices(
-  app,
-  pool,
-  authenticateToken,
-  requireReseller
-);
+        await installUssdDevices(
+      app,
+      pool,
+      authenticateToken,
+      requireReseller,
+      requireAdmin
+    );
           await installOperations(
         app,
         pool,
