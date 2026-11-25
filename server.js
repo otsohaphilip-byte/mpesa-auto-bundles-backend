@@ -245,6 +245,15 @@ ON CONFLICT (bundle_code) DO NOTHING;
     ALTER TABLE offers
       ADD COLUMN IF NOT EXISTS bingwa_price NUMERIC(12,2),
       ADD COLUMN IF NOT EXISTS safaricom_price NUMERIC(12,2);
+          UPDATE offers
+    SET bingwa_price = price
+    WHERE bingwa_price IS NULL;
+
+    UPDATE offers o
+    SET safaricom_price = pc.safaricom_price
+    FROM product_catalog pc
+    WHERE o.catalog_product_id = pc.id
+      AND o.safaricom_price IS NULL;
       ALTER TABLE resellers
   ADD COLUMN IF NOT EXISTS email VARCHAR(150);
 
