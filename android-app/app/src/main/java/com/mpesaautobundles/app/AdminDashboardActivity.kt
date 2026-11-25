@@ -975,6 +975,7 @@ section.addView(adminGatewayStatus)
                                         ).show()
                                     }
                                     loadAdminGatewayStatus()
+                                    sendAdminGatewayHeartbeat()
                                 } catch (e: Exception) {
                                     runOnUiThread {
                                         Toast.makeText(
@@ -995,7 +996,6 @@ section.addView(adminGatewayStatus)
     return section
 }
 private fun loadAdminGatewayStatus() {
-                                        sendAdminGatewayHeartbeat()
     Thread {
         var message = "Unable to load Admin gateway status."
 
