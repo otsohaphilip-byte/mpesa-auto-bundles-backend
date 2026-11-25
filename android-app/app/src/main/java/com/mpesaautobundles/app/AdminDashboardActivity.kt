@@ -1049,6 +1049,67 @@ private fun loadAdminGatewayStatus() {
         }
     }.start()
 }
+private fun sendAdminGatewayHeartbeat() {
+    Thread {
+        var connection: HttpURLConnection? = null
+
+        try {
+            val deviceToken = getSharedPreferences(
+                "admin_agent_gateway",
+                MODE_PRIVATE
+            ).getString("device_token", "") ?: ""
+
+            if (deviceToken.isBlank()) {
+                return@Thread
+            }
+
+            connection = URL(
+                "https://mpesa-auto-bundles-backend.onrender.com/api/admin/ussd/device/heartbeat"
+            ).openConnection() as HttpURLConnection
+
+            connection.requestMethod = "POST"
+            connection.connectTimeout = 20000
+            connection.readTimeout = 20000
+            connection.doOutput = true
+
+            connection.setRequestProperty(
+                "X-Device-Token",
+                deviceToken
+            )
+
+            connection.setRequestProperty(
+                "Content-Type",
+                "application/json"
+            )
+
+            connection.outputStream.use {
+                it.write("{}".toByteArray(Charsets.UTF_8))
+            }
+
+            val code = connection.responseCode
+
+            if (code in 200..299) {
+                runOnUiThread {
+                    loadAdminGatewayStatus()
+                }
+            } else {
+                android.util.Log.e(
+                    "MAB_Gateway",
+                    "Admin heartbeat failed: HTTP $code"
+                )
+            }
+
+        } catch (e: Exception) {
+            android.util.Log.e(
+                "MAB_Gateway",
+                "Admin heartbeat error",
+                e
+            )
+        } finally {
+            connection?.disconnect()
+        }
+    }.start()
+}
     private fun openConnection(path: String): HttpURLConnection {
         val url = URL(
             "https://mpesa-auto-bundles-backend.onrender.com$path"
