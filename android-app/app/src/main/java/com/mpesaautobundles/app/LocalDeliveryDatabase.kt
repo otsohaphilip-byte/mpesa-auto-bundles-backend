@@ -10,7 +10,7 @@ import java.util.UUID
 
 class LocalDeliveryDatabase(context: Context) :
     SQLiteOpenHelper(context, "mab_local_deliveries.db", null, 3)
-
+{
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL(
             """
