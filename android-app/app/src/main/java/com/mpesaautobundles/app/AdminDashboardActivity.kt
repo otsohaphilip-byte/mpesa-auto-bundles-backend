@@ -846,7 +846,12 @@ private fun createAdminGatewaySection(): View {
             setPadding(0, 8, 0, 12)
         }
     )
-
+adminGatewayStatus = makeText(
+    "Checking Admin gateway status...",
+    13f,
+    grey
+)
+section.addView(adminGatewayStatus)
     val registerButton = Button(this).apply {
         text = "Register Admin Gateway SIM"
         setTextColor(Color.WHITE)
