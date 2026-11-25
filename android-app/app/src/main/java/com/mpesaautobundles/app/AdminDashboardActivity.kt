@@ -995,6 +995,7 @@ section.addView(adminGatewayStatus)
     return section
 }
 private fun loadAdminGatewayStatus() {
+                                        sendAdminGatewayHeartbeat()
     Thread {
         var message = "Unable to load Admin gateway status."
 
