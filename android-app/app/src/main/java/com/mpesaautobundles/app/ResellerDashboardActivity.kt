@@ -825,14 +825,12 @@ root.addView(createBottomNavigation())
     }
 
     private fun refreshPermissionStatus() {
-        for ((name, permission) in listOf(
+                for ((name, permission) in listOf(
             "Notifications" to notificationPermission(),
-            "SMS" to Manifest.permission.READ_SMS,
-            "Phone" to Manifest.permission.READ_PHONE_STATE,
-            "Camera" to Manifest.permission.CAMERA,
-            "Contacts" to Manifest.permission.READ_CONTACTS,
-            "Location" to Manifest.permission.ACCESS_FINE_LOCATION,
-            "Nearby devices" to nearbyDevicesPermission()
+            "Read SMS" to Manifest.permission.READ_SMS,
+            "Receive SMS" to Manifest.permission.RECEIVE_SMS,
+            "Phone state" to Manifest.permission.READ_PHONE_STATE,
+            "Make calls (USSD)" to Manifest.permission.CALL_PHONE
         )) {
             val granted = permission == "NOT_REQUIRED" ||
                 checkSelfPermission(permission) ==
