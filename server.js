@@ -1913,7 +1913,25 @@ app.post(
         );
       }
 
-      if (Number(queryData.ResultCode) !== 0) {
+              if (
+        queryData.ResultCode === undefined ||
+        queryData.ResultCode === null ||
+        String(queryData.ResultCode).trim() === ""
+      ) {
+        throw new Error(
+          "Safaricom has not returned a final STK payment result yet."
+        );
+      }
+
+      const queryResultCode = Number(queryData.ResultCode);
+
+      if (!Number.isFinite(queryResultCode)) {
+        throw new Error(
+          "Safaricom returned an invalid STK payment result."
+        );
+      }
+
+      if (queryResultCode !== 0) {
         await client.query(
           `UPDATE subscriptions
            SET status = 'failed',
