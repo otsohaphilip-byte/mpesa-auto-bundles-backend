@@ -951,23 +951,23 @@ app.post(
         return sendError(res, 403, "Reseller account not found.");
       }
 
-      if (isAdmin) {
-        await lockOfferPrices(client);
+            await lockOfferPrices(client);
 
-        const duplicate = await hasDuplicateActivePrice(
-          client,
-          amount
+      const duplicate = await hasDuplicateActivePrice(
+        client,
+        amount,
+        null,
+        resellerId
+      );
+
+      if (duplicate) {
+        await client.query("ROLLBACK");
+        return sendError(
+          res,
+          409,
+          "Another active offer on this same Till already uses this Bingwa price."
         );
-
-        if (duplicate) {
-          await client.query("ROLLBACK");
-          return sendError(
-            res,
-            409,
-            "Another active approved offer already uses this payment amount."
-          );
-        }
-      }
+  }
 
       const result = await client.query(
         `INSERT INTO offers (
