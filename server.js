@@ -101,16 +101,22 @@ async function lockOfferPrices(client) {
   );
 }
 
-async function hasDuplicateActivePrice(client, price, excludeId = null) {
+async function hasDuplicateActivePrice(
+  client,
+  price,
+  excludeId = null,
+  resellerId = null
+) {
   const result = await client.query(
     `SELECT id
      FROM offers
      WHERE active = TRUE
        AND approval_status = 'approved'
-       AND price = $1
+       AND COALESCE(bingwa_price, price) = $1
+       AND reseller_id IS NOT DISTINCT FROM $3
        AND ($2::BIGINT IS NULL OR id <> $2)
      LIMIT 1`,
-    [price, excludeId]
+    [price, excludeId, resellerId]
   );
 
   return result.rows.length > 0;
