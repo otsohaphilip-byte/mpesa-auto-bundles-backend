@@ -1240,10 +1240,10 @@ app.patch(
         }
       }
 
-      const result = await client.query(
-        `UPDATE offers
+              `UPDATE offers
          SET name = $1,
-             price = $2
+             price = $2,
+             bingwa_price = $2
          WHERE id = $3
          RETURNING *`,
         [
