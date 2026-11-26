@@ -386,6 +386,16 @@ function requireAdmin(req, res, next) {
   }
   next();
 }
+function requireAdminOrReseller(req, res, next) {
+  if (!["admin", "reseller"].includes(req.user.role)) {
+    return res.status(403).json({
+      status: "ERROR",
+      message: "Access denied."
+    });
+  }
+
+  next();
+}
 
 function requireReseller(req, res, next) {
   if (req.user.role !== "reseller") {
