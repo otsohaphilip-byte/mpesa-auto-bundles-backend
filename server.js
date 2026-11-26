@@ -1916,6 +1916,67 @@ app.post(
     }
   }
 );
+
+// RESELLER SUBSCRIPTION STATUS
+app.get(
+  "/api/subscriptions/status",
+  authenticateToken,
+  requireReseller,
+  async (req, res) => {
+    try {
+      const result = await pool.query(
+        `SELECT
+           plan,
+           amount,
+           status,
+           paid_at,
+           expires_at,
+           mpesa_receipt,
+           CASE
+             WHEN status = 'active'
+              AND expires_at > NOW()
+             THEN TRUE
+             ELSE FALSE
+           END AS is_active
+         FROM subscriptions
+         WHERE reseller_id = $1
+         ORDER BY created_at DESC, id DESC
+         LIMIT 1`,
+        [req.user.resellerId]
+      );
+
+      if (result.rowCount === 0) {
+        return res.json({
+          status: "none",
+          is_active: false,
+          message: "No subscription payment found."
+        });
+      }
+
+      return res.json({
+        status: result.rows[0].status,
+        plan: result.rows[0].plan,
+        amount: Number(result.rows[0].amount),
+        is_active: result.rows[0].is_active,
+        paid_at: result.rows[0].paid_at,
+        expires_at: result.rows[0].expires_at,
+        mpesa_receipt: result.rows[0].mpesa_receipt
+      });
+    } catch (error) {
+      console.error(
+        "Subscription status error:",
+        error
+      );
+
+      return sendError(
+        res,
+        500,
+        "Could not load subscription status."
+      );
+    }
+  }
+);
+
         
 // ==============================
 // SAFARICOM C2B VALIDATION
