@@ -12,6 +12,8 @@ import java.net.URL
 import org.json.JSONObject
 
 class BundleAutomationAccessibilityService : AccessibilityService() {
+        @Volatile
+    private var reportingJobId: String? = null
 
     private val heartbeatHandler = Handler(Looper.getMainLooper())
 
