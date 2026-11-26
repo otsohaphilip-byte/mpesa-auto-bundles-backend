@@ -234,6 +234,7 @@ async function initializeDatabase() {
       created_at TIMESTAMPTZ DEFAULT NOW()
     );
 
+    
     CREATE TABLE IF NOT EXISTS subscriptions (
       id BIGSERIAL PRIMARY KEY,
       reseller_id BIGINT REFERENCES resellers(id),
@@ -242,9 +243,33 @@ async function initializeDatabase() {
       payer_name VARCHAR(150),
       payer_phone VARCHAR(20),
       status VARCHAR(30) DEFAULT 'pending',
+      payment_reference VARCHAR(100) UNIQUE,
+      checkout_request_id VARCHAR(100) UNIQUE,
+      merchant_request_id VARCHAR(100),
+      mpesa_receipt VARCHAR(50) UNIQUE,
+      paid_at TIMESTAMPTZ,
       expires_at TIMESTAMPTZ,
-      created_at TIMESTAMPTZ DEFAULT NOW()
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
     );
+
+    ALTER TABLE subscriptions
+      ADD COLUMN IF NOT EXISTS payment_reference VARCHAR(100),
+      ADD COLUMN IF NOT EXISTS checkout_request_id VARCHAR(100),
+      ADD COLUMN IF NOT EXISTS merchant_request_id VARCHAR(100),
+      ADD COLUMN IF NOT EXISTS mpesa_receipt VARCHAR(50),
+      ADD COLUMN IF NOT EXISTS paid_at TIMESTAMPTZ,
+      ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
+
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_subscriptions_payment_reference
+      ON subscriptions(payment_reference);
+
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_subscriptions_checkout_request
+      ON subscriptions(checkout_request_id);
+
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_subscriptions_mpesa_receipt
+      ON subscriptions(mpesa_receipt);
+      
 
     CREATE TABLE IF NOT EXISTS airtime_ledger (
       id BIGSERIAL PRIMARY KEY,
