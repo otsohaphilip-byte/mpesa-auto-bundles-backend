@@ -689,12 +689,40 @@ async function installUssdDevices(
           ]
         );
 
-        if (result.rows.length === 0) {
-          return res.status(404).json({
-            status: "ERROR",
-            message: "Job not found or not assigned to this gateway."
+                if (result.rows.length === 0) {
+          const existing = await pool.query(
+            `SELECT id, status
+             FROM delivery_jobs
+             WHERE id = $1
+               AND gateway_role = $2
+               AND (
+                 ($2 = 'admin' AND admin_phone = $3::text)
+                 OR
+                 ($2 = 'reseller' AND reseller_id::text = $3::text)
+               )`,
+            [jobId, gatewayRole, gatewayId]
+          );
+
+          if (existing.rows.length === 0) {
+            return res.status(404).json({
+              status: "ERROR",
+              message: "Job not found or not assigned to this gateway."
+            });
+          }
+
+          if (existing.rows[0].status !== resultStatus) {
+            return res.status(409).json({
+              status: "ERROR",
+              message: "Job already has a different delivery result."
+            });
+          }
+
+          return res.json({
+            status: "SUCCESS",
+            already_recorded: true,
+            job: existing.rows[0]
           });
-        }
+          }
 
         res.json({
           status: "SUCCESS",
