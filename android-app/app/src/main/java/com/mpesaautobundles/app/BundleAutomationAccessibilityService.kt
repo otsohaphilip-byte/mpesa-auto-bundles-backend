@@ -299,7 +299,7 @@ class BundleAutomationAccessibilityService : AccessibilityService() {
 
             Log.i(TAG, "Likely USSD screen detected")
 
-            if (activeDelivery != null) {
+                        if (activeDelivery != null) {
                 val menuText = readVisibleUssdMenu()
 
                 if (menuText.isNotBlank()) {
@@ -309,8 +309,17 @@ class BundleAutomationAccessibilityService : AccessibilityService() {
                         .apply()
 
                     Log.i(TAG, "USSD menu text captured for active delivery")
+
+                    if (isSuccessfulSafaricomResponse(menuText)) {
+                        Log.i(TAG, "Confirmed Safaricom purchase success")
+                        reportDeliveryResult(
+                            activeDelivery,
+                            "success",
+                            menuText
+                        )
+                    }
                 }
-            }
+                        }
         }
     }
 
