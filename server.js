@@ -994,6 +994,12 @@ app.post("/api/resellers/register", async (req, res) => {
        VALUES ($1, $2)`,
       [reseller.id, passwordHash]
     );
+        await client.query(
+      `INSERT INTO token_wallets (reseller_id, balance)
+       VALUES ($1, 0)
+       ON CONFLICT (reseller_id) DO NOTHING`,
+      [reseller.id]
+    );
 await ensureResellerDefaultOffers(client, reseller.id);
     await client.query("COMMIT");
     transactionStarted = false;
