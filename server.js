@@ -1854,6 +1854,83 @@ app.post(
           ResultDesc: "Payment details did not match"
         });
       }
+      
+      // VERIFY THE PAYMENT DIRECTLY WITH SAFARICOM
+      const shortcode = String(
+        process.env.DARAJA_STK_SHORTCODE || ""
+      ).trim();
+
+      const passkey = String(
+        process.env.DARAJA_STK_PASSKEY || ""
+      ).trim();
+
+      if (!shortcode || !passkey) {
+        throw new Error(
+          "STK query settings are not configured."
+        );
+      }
+
+      const accessToken = await getDarajaAccessToken();
+
+      const queryTimestamp = new Date()
+        .toISOString()
+        .replace(/[-T:.Z]/g, "")
+        .slice(0, 14);
+
+      const queryPassword = Buffer.from(
+        shortcode + passkey + queryTimestamp
+      ).toString("base64");
+
+      const baseUrl =
+        process.env.DARAJA_BASE_URL ||
+        "https://sandbox.safaricom.co.ke";
+
+      const queryResponse = await fetch(
+        `${baseUrl}/mpesa/stkpushquery/v1/query`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            BusinessShortCode: shortcode,
+            Password: queryPassword,
+            Timestamp: queryTimestamp,
+            CheckoutRequestID: callback.CheckoutRequestID
+          })
+        }
+      );
+
+      const queryData = await queryResponse.json();
+
+      if (
+        !queryResponse.ok ||
+        String(queryData.ResponseCode) !== "0"
+      ) {
+        throw new Error(
+          "Safaricom STK payment verification could not be completed."
+        );
+      }
+
+      if (Number(queryData.ResultCode) !== 0) {
+        await client.query(
+          `UPDATE subscriptions
+           SET status = 'failed',
+               updated_at = NOW()
+           WHERE id = $1
+             AND status = 'pending'`,
+          [subscription.id]
+        );
+
+        await client.query("COMMIT");
+
+        return res.json({
+          ResultCode: 0,
+          ResultDesc: "Safaricom confirmed payment was not successful"
+        });
+      }
+      
 
       const expiry = await client.query(
         `UPDATE subscriptions
