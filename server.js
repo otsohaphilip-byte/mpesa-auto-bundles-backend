@@ -1240,7 +1240,8 @@ app.patch(
         }
       }
 
-              `UPDATE offers
+                    const result = await client.query(
+        `UPDATE offers
          SET name = $1,
              price = $2,
              bingwa_price = $2
