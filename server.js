@@ -1948,7 +1948,7 @@ app.get(
              ELSE 1
            END,
            created_at DESC,
-                       id DESC`
+            id DESC`,
         [req.user.resellerId]
       );
 
