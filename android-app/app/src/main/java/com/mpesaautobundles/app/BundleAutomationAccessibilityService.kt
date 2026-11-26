@@ -524,6 +524,103 @@ class BundleAutomationAccessibilityService : AccessibilityService() {
             }
         }.start()
                     }
+                        private fun syncPendingDeliveryResults() {
+        synchronized(this) {
+            if (pendingSyncInProgress) return
+            pendingSyncInProgress = true
+        }
+
+        Thread {
+            try {
+                val database = LocalDeliveryDatabase(this)
+                val pendingRecords = database.getPendingDeliveries()
+
+                for (record in pendingRecords) {
+                    var connection: HttpURLConnection? = null
+
+                    try {
+                        val localId = record.getAsString("local_id") ?: continue
+
+                        if (!localId.startsWith("job-")) continue
+
+                        val jobId = localId.removePrefix("job-").toLongOrNull()
+                            ?: continue
+
+                        val role = record.getAsString("role") ?: continue
+
+                        val preferencesName = if (role == "admin") {
+                            "admin_agent_gateway"
+                        } else {
+                            "agent_gateway"
+                        }
+
+                        val deviceToken = getSharedPreferences(
+                            preferencesName,
+                            MODE_PRIVATE
+                        ).getString("device_token", "") ?: ""
+
+                        if (deviceToken.isBlank()) continue
+
+                        val payload = JSONObject().apply {
+                            put("job_id", jobId)
+                            put(
+                                "status",
+                                record.getAsString("result_status")
+                                    ?.lowercase() ?: continue
+                            )
+                            put(
+                                "safaricom_response",
+                                record.getAsString("safaricom_response") ?: ""
+                            )
+                        }
+
+                        connection = URL(
+                            "https://mpesa-auto-bundles-backend.onrender.com/api/ussd/jobs/result"
+                        ).openConnection() as HttpURLConnection
+
+                        connection.requestMethod = "POST"
+                        connection.connectTimeout = 10000
+                        connection.readTimeout = 10000
+                        connection.doOutput = true
+
+                        connection.setRequestProperty(
+                            "X-Device-Token",
+                            deviceToken
+                        )
+                        connection.setRequestProperty(
+                            "Content-Type",
+                            "application/json"
+                        )
+
+                        connection.outputStream.use {
+                            it.write(
+                                payload.toString().toByteArray(Charsets.UTF_8)
+                            )
+                        }
+
+                        if (connection.responseCode == 200) {
+                            database.markAsSynced(localId)
+                            Log.i(
+                                TAG,
+                                "Pending delivery result synced: $jobId"
+                            )
+                        }
+
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Pending delivery sync failed", e)
+                    } finally {
+                        connection?.disconnect()
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Could not load pending delivery results", e)
+            } finally {
+                synchronized(this@BundleAutomationAccessibilityService) {
+                    pendingSyncInProgress = false
+                }
+            }
+        }.start()
+                        }
     private fun launchUssdCall(ussdCode: String): Boolean {
         val code = ussdCode.trim()
 
