@@ -1303,7 +1303,7 @@ app.patch(
 app.patch(
   "/api/admin/offers/:id/active",
   authenticateToken,
-  requireAdmin,
+    requireAdminOrReseller,
   async (req, res) => {
     const client = await pool.connect();
 
