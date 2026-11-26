@@ -1358,11 +1358,11 @@ app.patch(
       }
 
       if (active) {
-                const duplicate = await hasDuplicateActivePrice(
+                        const duplicate = await hasDuplicateActivePrice(
           client,
           offer.bingwa_price ?? offer.price,
           id,
-          null
+          req.user.role === "admin" ? null : req.user.resellerId
         );
         if (duplicate) {
           await client.query("ROLLBACK");
