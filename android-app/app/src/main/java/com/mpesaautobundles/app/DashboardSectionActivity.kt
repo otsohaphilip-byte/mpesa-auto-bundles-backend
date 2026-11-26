@@ -629,6 +629,7 @@ class DashboardSectionActivity : Activity() {
                     user, "buy_goods_till"
                 )
                 addProfileField(
+                                    addSubscriptionControls(user)
                     "Till phone number",
                     user, "till_phone"
                 )
