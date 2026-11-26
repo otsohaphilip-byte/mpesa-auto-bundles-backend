@@ -100,6 +100,48 @@ async function lockOfferPrices(client) {
     [872341]
   );
 }
+async function ensureResellerDefaultOffers(client, resellerId) {
+  await client.query(
+    "SELECT pg_advisory_xact_lock($1)",
+    [872342]
+  );
+
+  await client.query(
+    `INSERT INTO offers (
+       reseller_id,
+       name,
+       product_type,
+       price,
+       bundle_code,
+       active,
+       approval_status,
+       bingwa_price,
+       safaricom_price,
+       catalog_product_id
+     )
+     SELECT
+       $1,
+       pc.product_name,
+       pc.product_type,
+       COALESCE(pc.bingwa_price, pc.safaricom_price),
+       pc.bundle_code,
+       TRUE,
+       'approved',
+       COALESCE(pc.bingwa_price, pc.safaricom_price),
+       COALESCE(pc.safaricom_price, pc.bingwa_price),
+       pc.id
+     FROM product_catalog pc
+     WHERE pc.active = TRUE
+       AND COALESCE(pc.bingwa_price, pc.safaricom_price) > 0
+       AND NOT EXISTS (
+         SELECT 1
+         FROM offers o
+         WHERE o.reseller_id = $1
+           AND o.catalog_product_id = pc.id
+       )`,
+    [resellerId]
+  );
+}
 
 async function hasDuplicateActivePrice(
   client,
