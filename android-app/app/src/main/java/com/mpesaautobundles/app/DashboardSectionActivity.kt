@@ -628,11 +628,11 @@ class DashboardSectionActivity : Activity() {
                     "Safaricom Buy Goods Till",
                     user, "buy_goods_till"
                 )
-                addProfileField(
-                                    addSubscriptionControls(user)
+                                addProfileField(
                     "Till phone number",
                     user, "till_phone"
                 )
+                addSubscriptionControls(user)
             }
         }
     }
