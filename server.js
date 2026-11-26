@@ -1478,7 +1478,10 @@ app.post("/api/mpesa/validation", async (req, res) => {
 // ==============================
 
 
+
 app.post("/api/mpesa/confirmation", async (req, res) => {
+  const client = await pool.connect();
+
   try {
     const body = req.body || {};
 
@@ -1487,22 +1490,14 @@ app.post("/api/mpesa/confirmation", async (req, res) => {
       JSON.stringify(body)
     );
 
-    const transId = body.TransID
-      ? String(body.TransID).trim()
-      : null;
+    const transId = String(body.TransID || "").trim();
+    const till = String(body.BusinessShortCode || "").trim();
+    const amount = Number(body.TransAmount);
+    const payerPhone = String(body.MSISDN || "").trim();
 
-    const amountValue = body.TransAmount;
-    const amountNumber = Number(amountValue);
+    await client.query("BEGIN");
 
-    const transAmount =
-      amountValue !== undefined &&
-      amountValue !== null &&
-      amountValue !== "" &&
-      Number.isFinite(amountNumber)
-        ? amountNumber
-        : null;
-
-    await pool.query(
+    const saved = await client.query(
       `INSERT INTO mpesa_callback_events (
         trans_id,
         business_short_code,
@@ -1520,36 +1515,205 @@ app.post("/api/mpesa/confirmation", async (req, res) => {
         $1, $2, $3, $4, $5, $6,
         $7, $8, $9, $10::jsonb, $11
       )
-      ON CONFLICT (trans_id) DO NOTHING`,
+      ON CONFLICT (trans_id) DO NOTHING
+      RETURNING id`,
       [
-        transId,
-        body.BusinessShortCode || null,
+        transId || null,
+        till || null,
         body.BillRefNumber || null,
-        transAmount,
-        body.MSISDN || null,
+        Number.isFinite(amount) ? amount : null,
+        payerPhone || null,
         body.FirstName || null,
         body.MiddleName || null,
         body.LastName || null,
         body.TransTime || null,
         JSON.stringify(body),
-        transId ? null : "Missing M-Pesa transaction receipt number."
+        transId ? null : "Missing M-Pesa receipt number."
       ]
     );
 
+    if (saved.rowCount === 0) {
+      await client.query("COMMIT");
+      return res.json({
+        ResultCode: 0,
+        ResultDesc: "Duplicate confirmation received"
+      });
+    }
+
+    const callbackId = saved.rows[0].id;
+
+    const markUnmatched = async (reason) => {
+      await client.query(
+        `UPDATE mpesa_callback_events
+         SET processing_status = 'unmatched',
+             processing_note = $1
+         WHERE id = $2`,
+        [reason, callbackId]
+      );
+    };
+
+    if (
+      !transId ||
+      !till ||
+      !Number.isFinite(amount) ||
+      amount <= 0 ||
+      !payerPhone
+    ) {
+      await markUnmatched(
+        "Missing or invalid receipt, Till, amount or payer phone."
+      );
+      await client.query("COMMIT");
+
+      return res.json({
+        ResultCode: 0,
+        ResultDesc: "Confirmation received"
+      });
+    }
+
+    let gatewayRole;
+    let resellerId = null;
+    let adminPhone = null;
+
+    if (till === ADMIN_BUY_GOODS_TILL) {
+      gatewayRole = "admin";
+      adminPhone = String(process.env.ADMIN_PHONE || "").trim();
+
+      if (!adminPhone) {
+        await markUnmatched(
+          "Admin phone is not configured."
+        );
+        await client.query("COMMIT");
+
+        return res.json({
+          ResultCode: 0,
+          ResultDesc: "Confirmation received"
+        });
+      }
+    } else {
+      const resellerResult = await client.query(
+        `SELECT id
+         FROM resellers
+         WHERE buy_goods_till = $1
+         LIMIT 1`,
+        [till]
+      );
+
+      if (resellerResult.rowCount === 0) {
+        await markUnmatched("Receiving Till is not registered.");
+        await client.query("COMMIT");
+
+        return res.json({
+          ResultCode: 0,
+          ResultDesc: "Confirmation received"
+        });
+      }
+
+      gatewayRole = "reseller";
+      resellerId = resellerResult.rows[0].id;
+    }
+
+    const offersResult = await client.query(
+      `SELECT *
+       FROM offers
+       WHERE reseller_id IS NOT DISTINCT FROM $1
+         AND active = TRUE
+         AND approval_status = 'approved'
+         AND COALESCE(bingwa_price, price) = $2
+       FOR UPDATE`,
+      [resellerId, amount]
+    );
+
+    if (offersResult.rowCount === 0) {
+      await markUnmatched(
+        "No active offer matches this payment amount on the receiving Till."
+      );
+      await client.query("COMMIT");
+
+      return res.json({
+        ResultCode: 0,
+        ResultDesc: "Confirmation received"
+      });
+    }
+
+    if (offersResult.rowCount > 1) {
+      await markUnmatched(
+        "More than one active offer matches this payment amount."
+      );
+      await client.query("COMMIT");
+
+      return res.json({
+        ResultCode: 0,
+        ResultDesc: "Confirmation received"
+      });
+    }
+
+    const offer = offersResult.rows[0];
+
+    const destinationPhone = normalizePhoneForUssd(payerPhone);
+    const ussdCode = buildUssdCode(
+      offer.bundle_code,
+      destinationPhone
+    );
+
+    await client.query(
+      `INSERT INTO delivery_jobs (
+        payment_receipt,
+        gateway_role,
+        reseller_id,
+        admin_phone,
+        offer_id,
+        offer_name,
+        destination_phone,
+        amount,
+        ussd_code
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+      [
+        transId,
+        gatewayRole,
+        resellerId,
+        adminPhone,
+        offer.id,
+        offer.name,
+        destinationPhone,
+        amount,
+        ussdCode
+      ]
+    );
+
+    await client.query(
+      `UPDATE mpesa_callback_events
+       SET processing_status = 'queued',
+           processing_note = 'Payment matched. Delivery job created.'
+       WHERE id = $1`,
+      [callbackId]
+    );
+
+    await client.query("COMMIT");
+
     res.json({
       ResultCode: 0,
-      ResultDesc: "Confirmation received"
+      ResultDesc: "Payment matched and delivery queued"
     });
 
   } catch (error) {
+    try {
+      await client.query("ROLLBACK");
+    } catch (rollbackError) {
+      console.error("M-Pesa rollback error:", rollbackError);
+    }
+
     console.error("M-Pesa confirmation error:", error);
 
     res.status(500).json({
       ResultCode: 1,
       ResultDesc: "Confirmation processing failed"
     });
+  } finally {
+    client.release();
   }
 });
+
         
 
 // ==============================
