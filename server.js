@@ -60,6 +60,22 @@ function normalizePhoneForUssd(phone) {
   const internationalPhone = normalizePhone(phone);
   return "0" + internationalPhone.substring(3);
 }
+function buildUssdCode(template, destinationPhone) {
+  const codeTemplate = String(template || "").trim();
+
+  if (!codeTemplate.includes("@")) {
+    throw new Error("USSD template has no phone number placeholder.");
+  }
+
+  const localPhone = normalizePhoneForUssd(destinationPhone);
+  const ussdCode = codeTemplate.replace(/@/g, localPhone);
+
+  if (!/^\*[0-9*]+#$/.test(ussdCode)) {
+    throw new Error("Generated USSD code is invalid.");
+  }
+
+  return ussdCode;
+}
 function sendError(res, status, message) {
   return res.status(status).json({
     status: "ERROR",
