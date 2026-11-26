@@ -1223,10 +1223,11 @@ app.patch(
         offer.active === true &&
         offer.approval_status === "approved"
       ) {
-        const duplicate = await hasDuplicateActivePrice(
+                const duplicate = await hasDuplicateActivePrice(
           client,
           newPrice,
-          id
+          id,
+          null
         );
 
         if (duplicate) {
