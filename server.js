@@ -1940,8 +1940,15 @@ app.get(
            END AS is_active
          FROM subscriptions
          WHERE reseller_id = $1
-         ORDER BY created_at DESC, id DESC
-         LIMIT 1`,
+                  ORDER BY
+           CASE
+             WHEN status = 'active'
+              AND expires_at > NOW()
+             THEN 0
+             ELSE 1
+           END,
+           created_at DESC,
+           id DESC
         [req.user.resellerId]
       );
 
