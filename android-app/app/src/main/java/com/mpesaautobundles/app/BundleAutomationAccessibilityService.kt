@@ -561,17 +561,17 @@ class BundleAutomationAccessibilityService : AccessibilityService() {
 
                         if (deviceToken.isBlank()) continue
 
-                        val payload = JSONObject().apply {
-                            put("job_id", jobId)
-                            put(
-                                "status",
-                                record.getAsString("result_status")
-                                    ?.lowercase() ?: continue
-                            )
-                            put(
-                                "safaricom_response",
-                                record.getAsString("safaricom_response") ?: ""
-                            )
+                        val resultStatus = record.getAsString("result_status")?.lowercase()
+    ?: continue
+
+val payload = JSONObject().apply {
+    put("job_id", jobId)
+    put("status", resultStatus)
+    put(
+        "safaricom_response",
+        record.getAsString("safaricom_response") ?: ""
+    )
+}
                         }
 
                         connection = URL(
