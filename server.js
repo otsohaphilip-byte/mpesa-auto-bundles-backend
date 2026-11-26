@@ -697,8 +697,8 @@ app.post(
             PartyB: ADMIN_BUY_GOODS_TILL,
             PhoneNumber: phone,
             CallBackURL: callbackUrl,
-            AccountReference: paymentReference,
-            TransactionDesc: `Reseller ${plan} subscription`
+                        AccountReference: `SUB${crypto.randomBytes(4).toString("hex")}`,
+            TransactionDesc: "Subscription"
           })
         }
       );
