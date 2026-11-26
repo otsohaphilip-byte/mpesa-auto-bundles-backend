@@ -33,6 +33,7 @@ private var pendingSyncInProgress = false
 
     private val jobPollingRunnable = object : Runnable {
         override fun run() {
+                recoverStaleActiveDelivery()
                 syncPendingDeliveryResults()
             val adminToken = getSharedPreferences(
                 "admin_agent_gateway",
