@@ -366,13 +366,21 @@ class BundleAutomationAccessibilityService : AccessibilityService() {
                 message.contains("bundle")
             )
         }
-            private fun reportDeliveryResult(
+                private fun reportDeliveryResult(
         activeDelivery: android.content.ContentValues,
         status: String,
         responseText: String
     ) {
+        val jobIdText = activeDelivery.getAsString("job_id") ?: return
+
+        synchronized(this) {
+            if (reportingJobId == jobIdText) return
+            reportingJobId = jobIdText
+        }
+
         Thread {
             var connection: HttpURLConnection? = null
+            var reportAccepted = false
 
             try {
                 val role = activeDelivery.getAsString("role") ?: return@Thread
@@ -388,10 +396,12 @@ class BundleAutomationAccessibilityService : AccessibilityService() {
                     MODE_PRIVATE
                 ).getString("device_token", "") ?: ""
 
-                val jobId = activeDelivery.getAsString("job_id")
-                    ?.toLongOrNull() ?: return@Thread
+                val jobId = jobIdText.toLongOrNull()
+                    ?: throw IllegalArgumentException("Invalid delivery job ID")
 
-                if (deviceToken.isBlank()) return@Thread
+                if (deviceToken.isBlank()) {
+                    throw IllegalStateException("Gateway device token is missing")
+                }
 
                 val payload = JSONObject().apply {
                     put("job_id", jobId)
@@ -415,18 +425,31 @@ class BundleAutomationAccessibilityService : AccessibilityService() {
                     it.write(payload.toString().toByteArray(Charsets.UTF_8))
                 }
 
-                Log.i(
-                    TAG,
-                    "Delivery result report HTTP ${connection.responseCode}"
-                )
+                val responseCode = connection.responseCode
+
+                if (responseCode == 200) {
+                    reportAccepted = true
+                    LocalDeliveryDatabase(this).clearActiveDelivery()
+                    Log.i(TAG, "Delivery result accepted by backend for job $jobId")
+                } else {
+                    Log.e(TAG, "Delivery result report failed: HTTP $responseCode")
+                }
 
             } catch (e: Exception) {
                 Log.e(TAG, "Delivery result reporting failed", e)
             } finally {
                 connection?.disconnect()
+
+                if (!reportAccepted) {
+                    synchronized(this@BundleAutomationAccessibilityService) {
+                        if (reportingJobId == jobIdText) {
+                            reportingJobId = null
+                        }
+                    }
+                }
             }
         }.start()
-            }
+                }
 
     private fun launchUssdCall(ussdCode: String): Boolean {
         val code = ussdCode.trim()
