@@ -784,9 +784,9 @@ const cleanEmail = String(email || "").trim().toLowerCase();
        FROM resellers r
        JOIN reseller_credentials c
          ON c.reseller_id = r.id
-       WHERE r.phone = $1
+              WHERE LOWER(r.email) = $1
        LIMIT 1`,
-      [phone]
+      [cleanEmail]
     );
 
     if (result.rowCount === 0) {
