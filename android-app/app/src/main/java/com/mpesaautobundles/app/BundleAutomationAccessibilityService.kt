@@ -534,11 +534,7 @@ private var pendingSyncInProgress = false
 
         val jobId = activeDelivery.getAsString("job_id") ?: return
         val startedAt = activeDelivery.getAsLong("started_at") ?: return
-val resultAlreadySaved = database.getPendingDeliveries().any {
-    it.getAsString("local_id") == "job-$jobId"
-}
-
-if (resultAlreadySaved) return
+if (database.hasDeliveryResultForJob(jobId)) return
         val elapsed = System.currentTimeMillis() - startedAt
 
         if (elapsed >= 60000) {
