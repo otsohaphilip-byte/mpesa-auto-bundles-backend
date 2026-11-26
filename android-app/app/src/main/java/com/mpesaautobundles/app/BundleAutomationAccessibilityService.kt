@@ -310,14 +310,21 @@ class BundleAutomationAccessibilityService : AccessibilityService() {
 
                     Log.i(TAG, "USSD menu text captured for active delivery")
 
-                    if (isSuccessfulSafaricomResponse(menuText)) {
+                                        if (isSuccessfulSafaricomResponse(menuText)) {
                         Log.i(TAG, "Confirmed Safaricom purchase success")
                         reportDeliveryResult(
                             activeDelivery,
                             "success",
                             menuText
                         )
-                    }
+                    } else if (isFailedSafaricomResponse(menuText)) {
+                        Log.w(TAG, "Confirmed Safaricom recommendation failure")
+                        reportDeliveryResult(
+                            activeDelivery,
+                            "failed",
+                            menuText
+                        )
+                                        }
                 }
                         }
         }
