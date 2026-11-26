@@ -763,14 +763,15 @@ app.post("/api/resellers/register", async (req, res) => {
 
 app.post("/api/resellers/login", async (req, res) => {
   try {
-    const { phone, password } = req.body;
+    const { email, password } = req.body;
+const cleanEmail = String(email || "").trim().toLowerCase();
 
-    if (!phone || !password) {
-      return sendError(
-        res,
-        400,
-        "Phone number and password are required."
-      );
+    if (!cleanEmail || !password) {
+  return sendError(
+    res,
+    400,
+    "Email and password are required."
+  );
     }
 
     const result = await pool.query(
