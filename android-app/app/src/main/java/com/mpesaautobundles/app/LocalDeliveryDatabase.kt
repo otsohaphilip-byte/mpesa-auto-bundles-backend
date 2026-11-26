@@ -182,7 +182,15 @@ class LocalDeliveryDatabase(context: Context) :
         return cursor.moveToFirst()
     }
     }
-
+fun getDeliveryResultStatusForJob(jobId: String): String? {
+    readableDatabase.rawQuery(
+        "SELECT result_status FROM deliveries WHERE local_id = ? LIMIT 1",
+        arrayOf("job-$jobId")
+    ).use { cursor ->
+        if (!cursor.moveToFirst()) return null
+        return cursor.getString(0)
+    }
+}
     fun markAsSynced(localId: String) {
         val values = ContentValues().apply {
             put("synced", 1)
