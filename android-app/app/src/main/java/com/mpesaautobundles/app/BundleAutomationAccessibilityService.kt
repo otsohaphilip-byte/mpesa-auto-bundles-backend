@@ -375,6 +375,14 @@ class BundleAutomationAccessibilityService : AccessibilityService() {
                 message.contains("bundle")
             )
         }
+            private fun isFailedSafaricomResponse(responseText: String): Boolean {
+        val message = responseText.lowercase()
+            .replace(Regex("\\s+"), " ")
+            .trim()
+
+        return message.contains("recommendation failed") &&
+            message.contains("has already been recommended")
+            }
                 private fun reportDeliveryResult(
         activeDelivery: android.content.ContentValues,
         status: String,
