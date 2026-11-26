@@ -741,6 +741,7 @@ class DashboardSectionActivity : Activity() {
                         ),
                         Toast.LENGTH_LONG
                     ).show()
+                    loading.visibility = View.GONE
                     subscriptionStatus.text =
                         "Payment prompt requested. Waiting for confirmation."
                 }
@@ -768,6 +769,7 @@ class DashboardSectionActivity : Activity() {
             val response = request("/api/subscriptions/status")
 
             runOnUiThread {
+                loading.visibility = View.GONE
                 val active = response.optBoolean("is_active", false)
                 val plan = response.optString("plan", "")
                 val expiry = response.optString("expires_at", "")
