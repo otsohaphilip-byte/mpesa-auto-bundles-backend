@@ -224,6 +224,10 @@ async function initializeDatabase() {
       reseller_id BIGINT UNIQUE REFERENCES resellers(id),
       balance BIGINT DEFAULT 0 CHECK (balance >= 0)
     );
+        INSERT INTO token_wallets (reseller_id, balance)
+    SELECT id, 0
+    FROM resellers
+    ON CONFLICT (reseller_id) DO NOTHING;
 
     CREATE TABLE IF NOT EXISTS token_transactions (
       id BIGSERIAL PRIMARY KEY,
