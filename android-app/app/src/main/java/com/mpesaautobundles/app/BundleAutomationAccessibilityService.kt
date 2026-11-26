@@ -415,7 +415,7 @@ class BundleAutomationAccessibilityService : AccessibilityService() {
         return message.contains("recommendation failed") &&
             message.contains("has already been recommended")
             }
-                private fun reportDeliveryResult(
+                    private fun reportDeliveryResult(
         activeDelivery: android.content.ContentValues,
         status: String,
         responseText: String
@@ -432,7 +432,30 @@ class BundleAutomationAccessibilityService : AccessibilityService() {
             var reportAccepted = false
 
             try {
-                val role = activeDelivery.getAsString("role") ?: return@Thread
+                val role = activeDelivery.getAsString("role") ?: "reseller"
+
+                val localStatus = when (status.lowercase()) {
+                    "success" -> "SUCCESS"
+                    "failed" -> "FAILED"
+                    "uncertain" -> "UNCERTAIN"
+                    else -> throw IllegalArgumentException("Invalid delivery status")
+                }
+
+                val database = LocalDeliveryDatabase(this)
+
+                val localId = database.saveDeliveryResultForJob(
+                    jobId = jobIdText,
+                    role = role,
+                    ownerId = activeDelivery.getAsString("owner_id") ?: "",
+                    phone = activeDelivery.getAsString("destination_phone") ?: "",
+                    offerId = activeDelivery.getAsString("offer_id") ?: "",
+                    offerName = activeDelivery.getAsString("offer_name") ?: "Unknown offer",
+                    sellingPrice = activeDelivery.getAsDouble("selling_price") ?: 0.0,
+                    status = localStatus,
+                    safaricomResponse = responseText.take(2000)
+                )
+
+                Log.i(TAG, "Delivery result saved locally for job $jobIdText")
 
                 val preferencesName = if (role == "admin") {
                     "admin_agent_gateway"
@@ -477,8 +500,10 @@ class BundleAutomationAccessibilityService : AccessibilityService() {
                 val responseCode = connection.responseCode
 
                 if (responseCode == 200) {
+                    database.markAsSynced(localId)
+                    database.clearActiveDelivery()
                     reportAccepted = true
-                    LocalDeliveryDatabase(this).clearActiveDelivery()
+
                     Log.i(TAG, "Delivery result accepted by backend for job $jobId")
                 } else {
                     Log.e(TAG, "Delivery result report failed: HTTP $responseCode")
@@ -498,8 +523,7 @@ class BundleAutomationAccessibilityService : AccessibilityService() {
                 }
             }
         }.start()
-                }
-
+                    }
     private fun launchUssdCall(ussdCode: String): Boolean {
         val code = ussdCode.trim()
 
