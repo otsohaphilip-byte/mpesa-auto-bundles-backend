@@ -238,6 +238,31 @@ class BundleAutomationAccessibilityService : AccessibilityService() {
                 if (!launchUssdCall(ussdCode)) {
                     Log.e(TAG, "Could not launch USSD for job $jobId")
                 }
+                                Handler(Looper.getMainLooper()).postDelayed({
+                    val pendingDelivery =
+                        LocalDeliveryDatabase(this).getActiveDelivery()
+
+                    if (pendingDelivery?.getAsString("job_id") == jobId) {
+                        val startedAt =
+                            pendingDelivery.getAsLong("started_at") ?: 0L
+
+                        val elapsed =
+                            System.currentTimeMillis() - startedAt
+
+                        if (elapsed >= 60000) {
+                            Log.w(
+                                TAG,
+                                "USSD delivery reached 60-second timeout"
+                            )
+
+                            reportDeliveryResult(
+                                pendingDelivery,
+                                "uncertain",
+                                "No definitive Safaricom response within 60 seconds"
+                            )
+                        }
+                    }
+                }, 60000)
 
             } catch (e: Exception) {
                 Log.e(TAG, "Gateway job polling failed", e)
