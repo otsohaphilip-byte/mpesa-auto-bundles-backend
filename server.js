@@ -777,7 +777,7 @@ app.post("/api/resellers/register", async (req, res) => {
        VALUES ($1, $2)`,
       [reseller.id, passwordHash]
     );
-
+await ensureResellerDefaultOffers(client, reseller.id);
     await client.query("COMMIT");
     transactionStarted = false;
 
