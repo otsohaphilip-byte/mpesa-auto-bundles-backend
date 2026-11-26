@@ -352,6 +352,18 @@ class BundleAutomationAccessibilityService : AccessibilityService() {
         collect(root)
         return result.toString().take(2000)
     }
+        private fun isSuccessfulSafaricomResponse(responseText: String): Boolean {
+        val message = responseText.lowercase()
+            .replace(Regex("\\s+"), " ")
+            .trim()
+
+        return message.contains("you have successfully purchased") ||
+            (
+                message.contains("thank you for choosing safaricom") &&
+                message.contains("you have purchased") &&
+                message.contains("bundle")
+            )
+        }
 
     private fun launchUssdCall(ussdCode: String): Boolean {
         val code = ussdCode.trim()
