@@ -32,6 +32,9 @@ app.use((req, res, next) => {
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL
 });
+const ADMIN_BUY_GOODS_TILL = String(
+  process.env.ADMIN_BUY_GOODS_TILL || "1731432"
+).trim();
 
 pool.on("error", (error) => {
   console.error("Database error:", error.message);
