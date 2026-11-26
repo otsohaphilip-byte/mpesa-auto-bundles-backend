@@ -602,6 +602,11 @@ val payload = JSONObject().apply {
 
                         if (connection.responseCode == 200) {
                             database.markAsSynced(localId)
+                            val activeDelivery = database.getActiveDelivery()
+
+if (activeDelivery?.getAsString("job_id") == jobId.toString()) {
+    database.clearActiveDelivery()
+}
                             Log.i(
                                 TAG,
                                 "Pending delivery result synced: $jobId"
