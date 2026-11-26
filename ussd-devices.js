@@ -56,6 +56,34 @@ async function installUssdDevices(
             message: "Enter a valid Kenyan mobile number."
           });
         }
+                const resellerTillResult = await pool.query(
+          `SELECT till_phone
+           FROM resellers
+           WHERE id = $1`,
+          [req.user.resellerId]
+        );
+
+        if (resellerTillResult.rowCount === 0) {
+          return res.status(404).json({
+            status: "ERROR",
+            message: "Reseller account not found."
+          });
+        }
+
+        const registeredTillPhone = String(
+          resellerTillResult.rows[0].till_phone || ""
+        ).replace(/\D/g, "");
+
+        const normalizedTillPhone = registeredTillPhone.startsWith("254")
+          ? "0" + registeredTillPhone.substring(3)
+          : registeredTillPhone;
+
+        if (phone !== normalizedTillPhone) {
+          return res.status(400).json({
+            status: "ERROR",
+            message: "Gateway phone must be the same SIM number registered for your Buy Goods Till."
+          });
+        }
 
         const deviceName = String(
           req.body.device_name || ""
