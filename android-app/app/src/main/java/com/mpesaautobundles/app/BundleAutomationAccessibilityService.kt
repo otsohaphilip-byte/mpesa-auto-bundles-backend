@@ -364,6 +364,67 @@ class BundleAutomationAccessibilityService : AccessibilityService() {
                 message.contains("bundle")
             )
         }
+            private fun reportDeliveryResult(
+        activeDelivery: android.content.ContentValues,
+        status: String,
+        responseText: String
+    ) {
+        Thread {
+            var connection: HttpURLConnection? = null
+
+            try {
+                val role = activeDelivery.getAsString("role") ?: return@Thread
+
+                val preferencesName = if (role == "admin") {
+                    "admin_agent_gateway"
+                } else {
+                    "agent_gateway"
+                }
+
+                val deviceToken = getSharedPreferences(
+                    preferencesName,
+                    MODE_PRIVATE
+                ).getString("device_token", "") ?: ""
+
+                val jobId = activeDelivery.getAsString("job_id")
+                    ?.toLongOrNull() ?: return@Thread
+
+                if (deviceToken.isBlank()) return@Thread
+
+                val payload = JSONObject().apply {
+                    put("job_id", jobId)
+                    put("status", status)
+                    put("safaricom_response", responseText.take(2000))
+                }
+
+                connection = URL(
+                    "https://mpesa-auto-bundles-backend.onrender.com/api/ussd/jobs/result"
+                ).openConnection() as HttpURLConnection
+
+                connection.requestMethod = "POST"
+                connection.connectTimeout = 20000
+                connection.readTimeout = 20000
+                connection.doOutput = true
+
+                connection.setRequestProperty("X-Device-Token", deviceToken)
+                connection.setRequestProperty("Content-Type", "application/json")
+
+                connection.outputStream.use {
+                    it.write(payload.toString().toByteArray(Charsets.UTF_8))
+                }
+
+                Log.i(
+                    TAG,
+                    "Delivery result report HTTP ${connection.responseCode}"
+                )
+
+            } catch (e: Exception) {
+                Log.e(TAG, "Delivery result reporting failed", e)
+            } finally {
+                connection?.disconnect()
+            }
+        }.start()
+            }
 
     private fun launchUssdCall(ussdCode: String): Boolean {
         val code = ussdCode.trim()
