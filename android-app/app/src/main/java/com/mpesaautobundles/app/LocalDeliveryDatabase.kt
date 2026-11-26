@@ -105,6 +105,44 @@ class LocalDeliveryDatabase(context: Context) :
 
         return localId
     }
+        fun saveDeliveryResultForJob(
+        jobId: String,
+        role: String,
+        ownerId: String,
+        phone: String,
+        offerId: String,
+        offerName: String,
+        sellingPrice: Double,
+        status: String,
+        safaricomResponse: String
+    ): String {
+        require(status in listOf("SUCCESS", "FAILED", "UNCERTAIN"))
+
+        val localId = "job-$jobId"
+
+        val values = ContentValues().apply {
+            put("local_id", localId)
+            put("role", role)
+            put("owner_id", ownerId)
+            put("destination_phone", phone)
+            put("offer_id", offerId)
+            put("offer_name", offerName)
+            put("selling_price", sellingPrice)
+            put("result_status", status)
+            put("safaricom_response", safaricomResponse)
+            put("created_at", System.currentTimeMillis())
+            put("synced", 0)
+        }
+
+        writableDatabase.insertWithOnConflict(
+            "deliveries",
+            null,
+            values,
+            SQLiteDatabase.CONFLICT_IGNORE
+        )
+
+        return localId
+        }
 
     fun getPendingDeliveries(): List<android.content.ContentValues> {
         val records = mutableListOf<android.content.ContentValues>()
