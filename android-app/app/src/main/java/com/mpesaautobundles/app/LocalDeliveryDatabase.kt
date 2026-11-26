@@ -174,6 +174,14 @@ class LocalDeliveryDatabase(context: Context) :
 
         return records
     }
+    fun hasDeliveryResultForJob(jobId: String): Boolean {
+    readableDatabase.rawQuery(
+        "SELECT 1 FROM deliveries WHERE local_id = ? LIMIT 1",
+        arrayOf("job-$jobId")
+    ).use { cursor ->
+        return cursor.moveToFirst()
+    }
+    }
 
     fun markAsSynced(localId: String) {
         val values = ContentValues().apply {
