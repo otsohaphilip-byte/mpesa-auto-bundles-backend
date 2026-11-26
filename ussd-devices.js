@@ -211,6 +211,27 @@ async function installUssdDevices(
             message: "Enter a valid Kenyan mobile number."
           });
         }
+                let adminTillPhone = String(
+          process.env.ADMIN_TILL_PHONE || ""
+        ).replace(/\D/g, "");
+
+        if (adminTillPhone.startsWith("254")) {
+          adminTillPhone = "0" + adminTillPhone.substring(3);
+        }
+
+        if (!/^(07|01)\d{8}$/.test(adminTillPhone)) {
+          return res.status(500).json({
+            status: "ERROR",
+            message: "Admin Till phone is not configured correctly."
+          });
+        }
+
+        if (phone !== adminTillPhone) {
+          return res.status(400).json({
+            status: "ERROR",
+            message: "Admin gateway phone must be the SIM number registered for the Admin Buy Goods Till."
+          });
+        }
 
         const deviceName = String(
           req.body.device_name || ""
