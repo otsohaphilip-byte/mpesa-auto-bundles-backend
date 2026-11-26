@@ -481,7 +481,10 @@ private var pendingSyncInProgress = false
 
                 val payload = JSONObject().apply {
                     put("job_id", jobId)
-                    put("status", status)
+                    put(
+    "status",
+    database.getDeliveryResultStatusForJob(jobIdText)?.lowercase() ?: status
+)
                     put("safaricom_response", responseText.take(2000))
                 }
 
