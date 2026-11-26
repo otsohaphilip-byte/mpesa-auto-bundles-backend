@@ -508,7 +508,11 @@ private var pendingSyncInProgress = false
 
                 if (responseCode == 200) {
                     database.markAsSynced(localId)
-                    database.clearActiveDelivery()
+
+val currentActiveDelivery = database.getActiveDelivery()
+if (currentActiveDelivery?.getAsString("job_id") == jobIdText) {
+    database.clearActiveDelivery()
+}
                     reportAccepted = true
 
                     Log.i(TAG, "Delivery result accepted by backend for job $jobId")
