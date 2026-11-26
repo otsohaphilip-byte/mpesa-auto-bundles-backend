@@ -1803,18 +1803,41 @@ app.post(
         return item ? item.Value : null;
       };
 
+      
       const paidAmount = Number(getItem("Amount"));
       const receipt = String(
         getItem("MpesaReceiptNumber") || ""
       ).trim();
+
+      let callbackPhone = "";
+      let expectedPhone = "";
+
+      try {
+        callbackPhone = normalizePhone(
+          getItem("PhoneNumber")
+        );
+
+        expectedPhone = normalizePhone(
+          subscription.payer_phone
+        );
+      } catch (error) {
+        console.error(
+          "Invalid subscription payer phone:",
+          error.message
+        );
+      }
 
       const expectedAmount = Number(subscription.amount);
 
       if (
         !receipt ||
         !Number.isFinite(paidAmount) ||
-        paidAmount !== expectedAmount
+        paidAmount !== expectedAmount ||
+        !callbackPhone ||
+        !expectedPhone ||
+        callbackPhone !== expectedPhone
       ) {
+  
         await client.query(
           `UPDATE subscriptions
            SET status = 'failed',
