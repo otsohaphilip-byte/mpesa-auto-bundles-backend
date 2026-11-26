@@ -1325,12 +1325,12 @@ app.patch(
       }
 
       if (active) {
-        const duplicate = await hasDuplicateActivePrice(
+                const duplicate = await hasDuplicateActivePrice(
           client,
-          offer.price,
-          id
+          offer.bingwa_price ?? offer.price,
+          id,
+          null
         );
-
         if (duplicate) {
           await client.query("ROLLBACK");
           return sendError(
