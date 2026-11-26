@@ -570,6 +570,195 @@ app.get(
     }
   }
 );
+
+// RESELLER SUBSCRIPTION STK PUSH
+app.post(
+  "/api/subscriptions/stk-push",
+  authenticateToken,
+  requireReseller,
+  async (req, res) => {
+    const plans = {
+      daily: { amount: 50, days: 1 },
+      weekly: { amount: 250, days: 7 },
+      monthly: { amount: 500, days: 30 }
+    };
+
+    const plan = String(req.body.plan || "").toLowerCase();
+    const selectedPlan = plans[plan];
+
+    if (!selectedPlan) {
+      return sendError(res, 400, "Select a valid subscription plan.");
+    }
+
+    const shortcode = String(
+      process.env.DARAJA_STK_SHORTCODE || ""
+    ).trim();
+
+    const passkey = String(
+      process.env.DARAJA_STK_PASSKEY || ""
+    ).trim();
+
+    const callbackUrl = String(
+      process.env.DARAJA_STK_CALLBACK_URL || ""
+    ).trim();
+
+    if (!shortcode || !passkey || !callbackUrl) {
+      return sendError(
+        res,
+        503,
+        "Subscription STK payment settings are incomplete."
+      );
+    }
+
+    let phone;
+
+    try {
+      phone = normalizePhone(req.body.phone);
+    } catch (error) {
+      return sendError(res, 400, error.message);
+    }
+
+    const paymentReference =
+      "SUB" + Date.now() + crypto.randomBytes(4).toString("hex");
+
+    const client = await pool.connect();
+
+    try {
+      const resellerResult = await client.query(
+        `SELECT id, status
+         FROM resellers
+         WHERE id = $1`,
+        [req.user.resellerId]
+      );
+
+      if (
+        resellerResult.rowCount === 0 ||
+        resellerResult.rows[0].status !== "approved"
+      ) {
+        return sendError(
+          res,
+          403,
+          "Your reseller account must be approved before subscribing."
+        );
+      }
+
+      const subscription = await client.query(
+        `INSERT INTO subscriptions (
+           reseller_id,
+           plan,
+           amount,
+           payer_phone,
+           status,
+           payment_reference
+         )
+         VALUES ($1, $2, $3, $4, 'pending', $5)
+         RETURNING id`,
+        [
+          req.user.resellerId,
+          plan,
+          selectedPlan.amount,
+          phone,
+          paymentReference
+        ]
+      );
+
+      const accessToken = await getDarajaAccessToken();
+
+      const timestamp = new Date()
+        .toISOString()
+        .replace(/[-T:.Z]/g, "")
+        .slice(0, 14);
+
+      const password = Buffer.from(
+        shortcode + passkey + timestamp
+      ).toString("base64");
+
+      const baseUrl =
+        process.env.DARAJA_BASE_URL ||
+        "https://sandbox.safaricom.co.ke";
+
+      const stkResponse = await fetch(
+        `${baseUrl}/mpesa/stkpush/v1/processrequest`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            BusinessShortCode: shortcode,
+            Password: password,
+            Timestamp: timestamp,
+            TransactionType:
+              process.env.DARAJA_STK_TRANSACTION_TYPE ||
+              "CustomerBuyGoodsOnline",
+            Amount: selectedPlan.amount,
+            PartyA: phone,
+            PartyB: ADMIN_BUY_GOODS_TILL,
+            PhoneNumber: phone,
+            CallBackURL: callbackUrl,
+            AccountReference: paymentReference,
+            TransactionDesc: `Reseller ${plan} subscription`
+          })
+        }
+      );
+
+      const stkData = await stkResponse.json();
+
+      if (
+        !stkResponse.ok ||
+        !stkData.CheckoutRequestID ||
+        Number(stkData.ResponseCode) !== 0
+      ) {
+        throw new Error(
+          stkData.errorMessage ||
+          stkData.ResponseDescription ||
+          "Safaricom did not accept the STK request."
+        );
+      }
+
+      await client.query(
+        `UPDATE subscriptions
+         SET checkout_request_id = $1,
+             merchant_request_id = $2,
+             updated_at = NOW()
+         WHERE id = $3`,
+        [
+          stkData.CheckoutRequestID,
+          stkData.MerchantRequestID || null,
+          subscription.rows[0].id
+        ]
+      );
+
+      return res.json({
+        status: "OK",
+        message: "Payment prompt sent. Complete payment on your phone.",
+        payment_reference: paymentReference,
+        amount: selectedPlan.amount
+      });
+    } catch (error) {
+      console.error("Subscription STK error:", error);
+
+      await client.query(
+        `UPDATE subscriptions
+         SET status = 'failed',
+             updated_at = NOW()
+         WHERE payment_reference = $1
+           AND status = 'pending'`,
+        [paymentReference]
+      );
+
+      return sendError(
+        res,
+        502,
+        "Could not start subscription payment. Please try again."
+      );
+    } finally {
+      client.release();
+    }
+  }
+);
+              
 // Required for serving the admin page and logo
 const path = require("path");
 
