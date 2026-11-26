@@ -1226,6 +1226,17 @@ app.patch(
       }
 
       const offer = existing.rows[0];
+            if (
+        req.user.role === "reseller" &&
+        Number(offer.reseller_id) !== Number(req.user.resellerId)
+      ) {
+        await client.query("ROLLBACK");
+        return sendError(
+          res,
+          403,
+          "You can only edit your own offers."
+        );
+            }
       const newPrice =
         amount === undefined ? offer.price : amount;
 
