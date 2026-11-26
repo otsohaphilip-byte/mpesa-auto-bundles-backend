@@ -54,12 +54,12 @@ function normalizePhone(phone) {
   }
 
   return "254" + digits;
-  function normalizePhoneForUssd(phone) {
+  }
+
+function normalizePhoneForUssd(phone) {
   const internationalPhone = normalizePhone(phone);
   return "0" + internationalPhone.substring(3);
-  }
 }
-
 function sendError(res, status, message) {
   return res.status(status).json({
     status: "ERROR",
