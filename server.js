@@ -1727,6 +1727,173 @@ app.delete(
     }
   }
 );
+
+ // SAFARICOM SUBSCRIPTION STK CALLBACK
+app.post(
+  "/api/mpesa/subscription-callback",
+  async (req, res) => {
+    const client = await pool.connect();
+
+    try {
+      const callback = req.body?.Body?.stkCallback;
+
+      if (!callback?.CheckoutRequestID) {
+        return res.json({
+          ResultCode: 0,
+          ResultDesc: "Callback received"
+        });
+      }
+
+      await client.query("BEGIN");
+
+      const result = await client.query(
+        `SELECT *
+         FROM subscriptions
+         WHERE checkout_request_id = $1
+         FOR UPDATE`,
+        [callback.CheckoutRequestID]
+      );
+
+      if (result.rowCount === 0) {
+        await client.query("COMMIT");
+
+        return res.json({
+          ResultCode: 0,
+          ResultDesc: "Unknown subscription callback received"
+        });
+      }
+
+      const subscription = result.rows[0];
+
+      if (subscription.status === "active") {
+        await client.query("COMMIT");
+
+        return res.json({
+          ResultCode: 0,
+          ResultDesc: "Payment already processed"
+        });
+      }
+
+      if (Number(callback.ResultCode) !== 0) {
+        await client.query(
+          `UPDATE subscriptions
+           SET status = 'failed',
+               updated_at = NOW()
+           WHERE id = $1
+             AND status = 'pending'`,
+          [subscription.id]
+        );
+
+        await client.query("COMMIT");
+
+        return res.json({
+          ResultCode: 0,
+          ResultDesc: "Payment was not completed"
+        });
+      }
+
+      const items =
+        callback.CallbackMetadata?.Item || [];
+
+      const getItem = (name) => {
+        const item = items.find(
+          entry => entry.Name === name
+        );
+
+        return item ? item.Value : null;
+      };
+
+      const paidAmount = Number(getItem("Amount"));
+      const receipt = String(
+        getItem("MpesaReceiptNumber") || ""
+      ).trim();
+
+      const expectedAmount = Number(subscription.amount);
+
+      if (
+        !receipt ||
+        !Number.isFinite(paidAmount) ||
+        paidAmount !== expectedAmount
+      ) {
+        await client.query(
+          `UPDATE subscriptions
+           SET status = 'failed',
+               updated_at = NOW()
+           WHERE id = $1
+             AND status = 'pending'`,
+          [subscription.id]
+        );
+
+        await client.query("COMMIT");
+
+        return res.json({
+          ResultCode: 0,
+          ResultDesc: "Payment details did not match"
+        });
+      }
+
+      const expiry = await client.query(
+        `UPDATE subscriptions
+         SET status = 'active',
+             mpesa_receipt = $1,
+             paid_at = NOW(),
+             expires_at =
+               GREATEST(
+                 COALESCE(expires_at, NOW()),
+                 NOW()
+               ) +
+               CASE plan
+                 WHEN 'daily' THEN INTERVAL '1 day'
+                 WHEN 'weekly' THEN INTERVAL '7 days'
+                 WHEN 'monthly' THEN INTERVAL '30 days'
+               END,
+             updated_at = NOW()
+         WHERE id = $2
+           AND status = 'pending'
+         RETURNING id, reseller_id, plan, amount, expires_at`,
+        [receipt, subscription.id]
+      );
+
+      if (expiry.rowCount === 0) {
+        await client.query("COMMIT");
+
+        return res.json({
+          ResultCode: 0,
+          ResultDesc: "Subscription already processed"
+        });
+      }
+
+      await client.query("COMMIT");
+
+      console.log(
+        "Subscription payment confirmed:",
+        receipt,
+        "Subscription:",
+        subscription.id
+      );
+
+      return res.json({
+        ResultCode: 0,
+        ResultDesc: "Subscription activated"
+      });
+    } catch (error) {
+      await client.query("ROLLBACK");
+
+      console.error(
+        "Subscription callback error:",
+        error
+      );
+
+      return res.status(500).json({
+        ResultCode: 1,
+        ResultDesc: "Subscription callback processing failed"
+      });
+    } finally {
+      client.release();
+    }
+  }
+);
+        
 // ==============================
 // SAFARICOM C2B VALIDATION
 // ==============================
