@@ -1084,24 +1084,37 @@ app.get(
   "/api/offers",
   authenticateToken,
   async (req, res) => {
+    const client = await pool.connect();
+    let transactionStarted = false;
+
     try {
       let result;
 
       if (req.user.role === "admin") {
-        result = await pool.query(
+        result = await client.query(
           `SELECT *
            FROM offers
            ORDER BY created_at DESC`
         );
       } else if (req.user.role === "reseller") {
-        result = await pool.query(
+        await client.query("BEGIN");
+        transactionStarted = true;
+
+        await ensureResellerDefaultOffers(
+          client,
+          req.user.resellerId
+        );
+
+        result = await client.query(
           `SELECT *
            FROM offers
            WHERE reseller_id = $1
-              OR reseller_id IS NULL
            ORDER BY created_at DESC`,
           [req.user.resellerId]
         );
+
+        await client.query("COMMIT");
+        transactionStarted = false;
       } else {
         return sendError(res, 403, "Access denied.");
       }
@@ -1111,8 +1124,14 @@ app.get(
         offers: result.rows
       });
     } catch (error) {
+      if (transactionStarted) {
+        await client.query("ROLLBACK");
+      }
+
       console.error("Load offers error:", error);
       sendError(res, 500, "Could not load offers.");
+    } finally {
+      client.release();
     }
   }
 );
