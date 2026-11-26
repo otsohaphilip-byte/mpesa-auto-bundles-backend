@@ -684,6 +684,103 @@ class DashboardSectionActivity : Activity() {
         ))
         content.addView(card)
     }
+    
+    private fun addSubscriptionControls(user: JSONObject) {
+        val card = makeCard()
+
+        card.addView(makeText(
+            "Reseller Subscription",
+            20f, dark, true
+        ))
+
+        val subscriptionStatus = makeText(
+            "Checking subscription...",
+            15f, grey
+        )
+        card.addView(subscriptionStatus)
+
+        val phoneInput = EditText(this).apply {
+            hint = "M-Pesa payment phone number"
+            setSingleLine(true)
+            setText(user.optString("phone", ""))
+            inputType = android.text.InputType.TYPE_CLASS_PHONE
+        }
+        card.addView(phoneInput)
+
+        card.addView(makeText(
+            "Choose a plan. The M-Pesa prompt will appear on this phone. Enter your PIN only in the Safaricom prompt.",
+            14f, grey
+        ))
+
+        fun startPayment(plan: String) {
+            val phone = phoneInput.text.toString().trim()
+
+            if (phone.isBlank()) {
+                phoneInput.error = "Enter the payment phone number"
+                return
+            }
+
+            runRequest {
+                val body = JSONObject().apply {
+                    put("plan", plan)
+                    put("phone", phone)
+                }
+
+                val response = request(
+                    "/api/subscriptions/stk-push",
+                    "POST",
+                    body
+                )
+
+                runOnUiThread {
+                    Toast.makeText(
+                        this,
+                        response.optString(
+                            "message",
+                            "Payment prompt request submitted."
+                        ),
+                        Toast.LENGTH_LONG
+                    ).show()
+                    subscriptionStatus.text =
+                        "Payment prompt requested. Waiting for confirmation."
+                }
+            }
+        }
+
+        val plans = listOf(
+            "Daily - KES 50" to "daily",
+            "Weekly - KES 250" to "weekly",
+            "Monthly - KES 500" to "monthly"
+        )
+
+        for ((label, plan) in plans) {
+            card.addView(Button(this).apply {
+                text = label
+                setOnClickListener {
+                    startPayment(plan)
+                }
+            })
+        }
+
+        content.addView(card)
+
+        runRequest {
+            val response = request("/api/subscriptions/status")
+
+            runOnUiThread {
+                val active = response.optBoolean("is_active", false)
+                val plan = response.optString("plan", "")
+                val expiry = response.optString("expires_at", "")
+
+                subscriptionStatus.text = if (active) {
+                    "ACTIVE - ${plan.uppercase()}\nExpires: $expiry"
+                } else {
+                    "Subscription: ${response.optString("status", "none").uppercase()}"
+                }
+            }
+        }
+    }
+    
 
         private fun loadSettings() {
         heading.text = "Settings"
