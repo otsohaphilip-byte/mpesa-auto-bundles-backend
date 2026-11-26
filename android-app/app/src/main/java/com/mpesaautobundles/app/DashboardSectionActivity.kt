@@ -762,6 +762,30 @@ class DashboardSectionActivity : Activity() {
                 }
             })
         }
+        
+        card.addView(Button(this).apply {
+            text = "Refresh Subscription Status"
+            setOnClickListener {
+                runRequest {
+                    val response = request("/api/subscriptions/status")
+
+                    runOnUiThread {
+                        loading.visibility = View.GONE
+
+                        val active = response.optBoolean("is_active", false)
+                        val plan = response.optString("plan", "")
+                        val expiry = response.optString("expires_at", "")
+
+                        subscriptionStatus.text = if (active) {
+                            "ACTIVE - ${plan.uppercase()}\nExpires: $expiry"
+                        } else {
+                            "Subscription: ${response.optString("status", "none").uppercase()}"
+                        }
+                    }
+                }
+            }
+        })
+        
 
         content.addView(card)
 
