@@ -422,6 +422,7 @@ class DashboardSectionActivity : Activity() {
         val id = offer.optLong("id")
         val name = offer.optString("name", "Data bundle")
         val price = offer.optString("price", "0")
+        val safaricomPrice = offer.optString("safaricom_price", "0")
         val validity = offer.optString("validity", "")
         val category = offer.optString(
             "catalog_category",
@@ -435,6 +436,10 @@ class DashboardSectionActivity : Activity() {
             "Selling price: KSh $price",
             17f, green, true
         ))
+        card.addView(makeText(
+    "Safaricom price: KSh $safaricomPrice",
+    14f, grey
+))
 
         if (validity.isNotBlank()) {
             card.addView(makeText("Validity: $validity", 14f, grey))
