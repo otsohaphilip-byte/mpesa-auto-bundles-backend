@@ -289,7 +289,7 @@ VALUES
 ('750MBs_50SMS - 24Hrs', 'data', '*180*5*2*@*3*1#', 50, 50, FALSE, TRUE),
 ('1,5Gb - 3hrs', 'data', '*180*5*2*@*7*1#', 52, 50, FALSE, TRUE),
 ('2GB - 24Hr Tunukiwa', 'data', '*544*12*0*@*1*1#', 104, 100, FALSE, TRUE),
-('2,5 GB 30days', 'data', '*180*5*2*@*0*1*1#', 255, 255, FALSE, TRUE),
+('2,5 GB 30days', 'data', '*180*5*2*@*0*1*1#', 254, 255, FALSE, TRUE),
 ('7GB 30 days', 'data', '*180*5*2*@*0*3*1#', 509, 500, FALSE, TRUE),
 ('8GB + 400 mins 30 days', 'data', '*180*5*2*@*0*6*1#', 1006, 1000, FALSE, TRUE),
 ('21 GB 3days', 'data', '*180*5*2*@*8*5*1#', 1009, 1000, FALSE, TRUE),
@@ -312,6 +312,9 @@ VALUES
 ('9000 mins 30 days', 'minutes', '*444*5*1*98*7*3*@*2*1#', 1010, 1000, FALSE, TRUE),
 ('20000 min 30days', 'minutes', '*444*5*1*98*8*3*@*2*1#', 2020, 2000, FALSE, TRUE)
 ON CONFLICT (bundle_code) DO NOTHING;
+UPDATE product_catalog
+SET bingwa_price = 254
+WHERE bundle_code = '*180*5*2*@*0*1*1#';
 
     ALTER TABLE offers
       ADD COLUMN IF NOT EXISTS bingwa_price NUMERIC(12,2),
