@@ -527,6 +527,25 @@ private var pendingSyncInProgress = false
             }
         }.start()
                     }
+                        private fun recoverStaleActiveDelivery() {
+        val database = LocalDeliveryDatabase(this)
+        val activeDelivery = database.getActiveDelivery() ?: return
+
+        val jobId = activeDelivery.getAsString("job_id") ?: return
+        val startedAt = activeDelivery.getAsLong("started_at") ?: return
+
+        val elapsed = System.currentTimeMillis() - startedAt
+
+        if (elapsed >= 60000) {
+            Log.w(TAG, "Recovering stale delivery job $jobId")
+
+            reportDeliveryResult(
+                activeDelivery,
+                "uncertain",
+                "Gateway recovery: no definitive Safaricom response within 60 seconds"
+            )
+        }
+                        }
                         private fun syncPendingDeliveryResults() {
         synchronized(this) {
             if (pendingSyncInProgress) return
