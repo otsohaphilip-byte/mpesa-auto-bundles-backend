@@ -572,7 +572,6 @@ val payload = JSONObject().apply {
         record.getAsString("safaricom_response") ?: ""
     )
 }
-                        }
 
                         connection = URL(
                             "https://mpesa-auto-bundles-backend.onrender.com/api/ussd/jobs/result"
