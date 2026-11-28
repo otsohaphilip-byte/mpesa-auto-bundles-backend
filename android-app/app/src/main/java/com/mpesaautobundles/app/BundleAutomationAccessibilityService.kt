@@ -55,6 +55,9 @@ private var pendingSyncInProgress = false
                                     } else if (resellerToken.isNotBlank()) {
                 claimAndStartGatewayJob("reseller", "agent_gateway")
             }
+                        if (resellerToken.isNotBlank()) {
+                claimAndStartAirtimeTransfer("agent_gateway")
+                        }
 
             jobPollingHandler.postDelayed(this, JOB_POLL_INTERVAL)
         }
