@@ -50,7 +50,8 @@ private var pendingSyncInProgress = false
 
             if (adminToken.isNotBlank()) {
                 claimAndStartGatewayJob("admin", "admin_agent_gateway")
-            } else if (resellerToken.isNotBlank()) {
+                        } else if (resellerToken.isNotBlank()) {
+                claimAndStartAirtimeTransfer("agent_gateway")
                 claimAndStartGatewayJob("reseller", "agent_gateway")
             }
 
