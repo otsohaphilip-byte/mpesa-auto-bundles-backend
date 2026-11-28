@@ -2396,7 +2396,21 @@ app.post("/api/mpesa/confirmation", async (req, res) => {
 
     const offer = offersResult.rows[0];
 
-    const destinationPhone = normalizePhoneForUssd(payerPhone);
+        let destinationPhone;
+
+    try {
+      destinationPhone = normalizePhoneForUssd(payerPhone);
+    } catch (error) {
+      await markUnmatched(
+        "Payer phone number is not a valid Kenyan mobile number."
+      );
+      await client.query("COMMIT");
+
+      return res.json({
+        ResultCode: 0,
+        ResultDesc: "Confirmation received"
+      });
+      }
     const ussdCode = buildUssdCode(
       offer.bundle_code,
       destinationPhone
