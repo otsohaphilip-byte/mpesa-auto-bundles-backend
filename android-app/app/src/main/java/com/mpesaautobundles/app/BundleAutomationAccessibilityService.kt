@@ -6,6 +6,9 @@ import android.net.Uri
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
+import android.os.Build
+import android.telephony.SubscriptionManager
+import android.telephony.TelephonyManager
 import android.view.accessibility.AccessibilityEvent
 import java.net.HttpURLConnection
 import java.net.URL
