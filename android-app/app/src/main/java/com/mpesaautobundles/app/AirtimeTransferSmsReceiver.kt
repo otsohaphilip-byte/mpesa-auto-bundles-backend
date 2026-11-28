@@ -108,6 +108,5 @@ class AirtimeTransferSmsReceiver : BroadcastReceiver() {
         const val PENDING_SMS_KEY = "pending_sambaza_sms"
         const val MAX_PENDING_SMS = 100
 
-        private val SMS_QUEUE_LOCK = Any()
     }
 }
