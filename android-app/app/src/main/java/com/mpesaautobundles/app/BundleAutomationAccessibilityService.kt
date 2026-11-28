@@ -973,7 +973,7 @@ class BundleAutomationAccessibilityService : AccessibilityService() {
                 connection?.disconnect()
 
                 synchronized(this@BundleAutomationAccessibilityService) {
-                    if (reportingJobId == jobIdText) {
+                    if (ownsReportingSlot && reportingJobId == jobIdText) {
                         reportingJobId = null
                     }
                 }
