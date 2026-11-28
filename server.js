@@ -2411,10 +2411,24 @@ app.post("/api/mpesa/confirmation", async (req, res) => {
         ResultDesc: "Confirmation received"
       });
       }
-    const ussdCode = buildUssdCode(
-      offer.bundle_code,
-      destinationPhone
-    );
+    let ussdCode;
+
+    try {
+      ussdCode = buildUssdCode(
+        offer.bundle_code,
+        destinationPhone
+      );
+    } catch (error) {
+      await markUnmatched(
+        "The matched offer has an invalid USSD template."
+      );
+      await client.query("COMMIT");
+
+      return res.json({
+        ResultCode: 0,
+        ResultDesc: "Confirmation received"
+      });
+  }
 
     await client.query(
       `INSERT INTO delivery_jobs (
