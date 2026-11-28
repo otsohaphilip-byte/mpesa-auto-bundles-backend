@@ -157,8 +157,8 @@ private var pendingSyncInProgress = false
         role: String,
         preferencesName: String
     ) {
-            
-        if (jobPollingInProgress) return
+
+                if (jobPollingInProgress || ussdSessionInProgress) return
         jobPollingInProgress = true
 
         Thread {
