@@ -550,7 +550,21 @@ async function installUssdDevices(
           gatewayRole = "reseller";
           gatewayId = reseller.rows[0].reseller_id;
         }
-
+        await client.query(
+          `UPDATE delivery_jobs
+           SET status = 'uncertain',
+               last_error = 'Gateway claim expired without a confirmed delivery result. Manual or later evidence is required.',
+               updated_at = NOW()
+           WHERE status = 'claimed'
+             AND claimed_at < NOW() - INTERVAL '2 minutes'
+             AND gateway_role = $1
+             AND (
+               ($1 = 'admin' AND admin_phone = $2::text)
+               OR
+               ($1 = 'reseller' AND reseller_id::text = $2::text)
+             )`,
+          [gatewayRole, gatewayId]
+        );
         const result = await client.query(
           `UPDATE delivery_jobs
            SET status = 'claimed',
