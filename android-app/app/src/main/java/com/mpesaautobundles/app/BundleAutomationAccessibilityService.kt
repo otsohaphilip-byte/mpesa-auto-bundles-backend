@@ -348,7 +348,7 @@ class BundleAutomationAccessibilityService : AccessibilityService() {
                     isKenyanLocalPhone(destinationPhone) &&
                                     offerId.isNotBlank() &&
                     offerName.isNotBlank() &&
-                    amount >= 0.0 &&
+                amount > 0.0 &&
                     isValidUssdCode(ussdCode)
 
                 if (!validJob) {
