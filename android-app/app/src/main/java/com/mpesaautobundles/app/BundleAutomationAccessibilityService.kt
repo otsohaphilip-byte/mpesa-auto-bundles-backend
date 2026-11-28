@@ -311,7 +311,7 @@ private var pendingSyncInProgress = false
         }.start()
     }
 
-    override fun onAccessibilityEvent(event: AccessibilityEvent?) {
+        override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event == null) return
 
         val packageName = event.packageName?.toString() ?: return
@@ -323,75 +323,105 @@ private var pendingSyncInProgress = false
 
         if (!isPhoneScreen) return
 
-        val eventText = event.text
-            .joinToString(" ")
-            .lowercase()
+        val eventText = event.text.joinToString(" ").lowercase()
 
         val isLikelyUssd =
             eventText.contains("ussd") ||
             eventText.contains("safaricom") ||
             className.contains("alertdialog", ignoreCase = true)
 
-        if (isLikelyUssd) {
-            getSharedPreferences("app_setup", MODE_PRIVATE)
-                .edit()
-                .putBoolean("ussd_screen_detected", true)
-                .putLong(
-                    "ussd_screen_detected_at",
-                    System.currentTimeMillis()
-                )
-                .apply()
+        if (!isLikelyUssd) return
 
-            val activeDelivery =
-                LocalDeliveryDatabase(this).getActiveDelivery()
+        getSharedPreferences("app_setup", MODE_PRIVATE)
+            .edit()
+            .putBoolean("ussd_screen_detected", true)
+            .putLong(
+                "ussd_screen_detected_at",
+                System.currentTimeMillis()
+            )
+            .apply()
 
-            if (activeDelivery != null) {
-                val activeRole =
-                    activeDelivery.getAsString("role") ?: "unknown"
+        val menuText = readVisibleUssdMenu()
+        if (menuText.isBlank()) return
 
-                val activeOffer =
-                    activeDelivery.getAsString("offer_name") ?: "unknown"
+        getSharedPreferences("app_setup", MODE_PRIVATE)
+            .edit()
+            .putString("last_ussd_menu_text", menuText)
+            .apply()
 
-                Log.i(
-                    TAG,
-                    "USSD linked to active delivery: role=$activeRole, offer=$activeOffer"
-                )
-            } else {
-                Log.w(TAG, "USSD detected but no active delivery was saved")
+        val activeDelivery =
+            LocalDeliveryDatabase(this).getActiveDelivery()
+
+        if (activeDelivery != null) {
+            Log.i(TAG, "USSD response linked to active bundle delivery")
+
+            when {
+                isSuccessfulSafaricomResponse(menuText) -> {
+                    reportDeliveryResult(
+                        activeDelivery,
+                        "success",
+                        menuText
+                    )
+                }
+
+                isFailedSafaricomResponse(menuText) -> {
+                    reportDeliveryResult(
+                        activeDelivery,
+                        "failed",
+                        menuText
+                    )
+                }
             }
 
-            Log.i(TAG, "Likely USSD screen detected")
-
-                        if (activeDelivery != null) {
-                val menuText = readVisibleUssdMenu()
-
-                if (menuText.isNotBlank()) {
-                    getSharedPreferences("app_setup", MODE_PRIVATE)
-                        .edit()
-                        .putString("last_ussd_menu_text", menuText)
-                        .apply()
-
-                    Log.i(TAG, "USSD menu text captured for active delivery")
-
-                                        if (isSuccessfulSafaricomResponse(menuText)) {
-                        Log.i(TAG, "Confirmed Safaricom purchase success")
-                        reportDeliveryResult(
-                            activeDelivery,
-                            "success",
-                            menuText
-                        )
-                    } else if (isFailedSafaricomResponse(menuText)) {
-                        Log.w(TAG, "Confirmed Safaricom recommendation failure")
-                        reportDeliveryResult(
-                            activeDelivery,
-                            "failed",
-                            menuText
-                        )
-                                        }
-                }
-                        }
+            return
         }
-    }
+
+        val transferPreferences = getSharedPreferences(
+            "active_airtime_transfer",
+            MODE_PRIVATE
+        )
+
+        val transferId = transferPreferences.getLong(
+            "transfer_id",
+            0L
+        )
+
+        if (transferId <= 0L) {
+            Log.w(TAG, "USSD screen detected without an active transaction")
+            return
+        }
+
+        val lower = menuText.lowercase()
+
+        when {
+            lower.contains("failed") ||
+            lower.contains("insufficient") ||
+            lower.contains("invalid") -> {
+                reportAirtimeTransferResult(
+                    transferId,
+                    "failed",
+                    menuText
+                )
+            }
+
+            lower.contains("transferred") ||
+            lower.contains("successfully sent") ||
+            lower.contains("successfully transferred") -> {
+                reportAirtimeTransferResult(
+                    transferId,
+                    "awaiting_confirmation",
+                    menuText
+                )
+            }
+
+            else -> {
+                Log.i(
+                    TAG,
+                    "Sambaza USSD screen detected; awaiting a definitive response"
+                )
+            }
+        }
+        }
 
     private fun readVisibleUssdMenu(): String {
         val root = rootInActiveWindow ?: return ""
@@ -433,6 +463,107 @@ private var pendingSyncInProgress = false
         collect(root)
         return result.toString().take(2000)
     }
+        private fun reportAirtimeTransferResult(
+        transferId: Long,
+        resultStatus: String,
+        responseText: String
+    ) {
+        val preferences = getSharedPreferences(
+            "active_airtime_transfer",
+            MODE_PRIVATE
+        )
+
+        if (preferences.getLong("transfer_id", 0L) != transferId) {
+            return
+        }
+
+        synchronized(this) {
+            if (preferences.getBoolean("report_in_progress", false)) {
+                return
+            }
+
+            preferences.edit()
+                .putBoolean("report_in_progress", true)
+                .putString("result_status", resultStatus)
+                .putString("response_text", responseText.take(2000))
+                .apply()
+        }
+
+        Thread {
+            var connection: HttpURLConnection? = null
+
+            try {
+                val deviceToken = preferences.getString(
+                    "device_token",
+                    ""
+                ) ?: ""
+
+                if (deviceToken.isBlank()) {
+                    throw IllegalStateException(
+                        "Airtime transfer device token is missing"
+                    )
+                }
+
+                val payload = JSONObject().apply {
+                    put("transferId", transferId)
+                    put("status", resultStatus)
+                }
+
+                connection = URL(
+                    "https://mpesa-auto-bundles-backend.onrender.com/api/ussd/airtime-transfers/result"
+                ).openConnection() as HttpURLConnection
+
+                connection.requestMethod = "POST"
+                connection.connectTimeout = 15000
+                connection.readTimeout = 15000
+                connection.doOutput = true
+
+                connection.setRequestProperty(
+                    "X-Device-Token",
+                    deviceToken
+                )
+                connection.setRequestProperty(
+                    "Content-Type",
+                    "application/json"
+                )
+
+                connection.outputStream.use {
+                    it.write(
+                        payload.toString().toByteArray(Charsets.UTF_8)
+                    )
+                }
+
+                if (connection.responseCode == 200) {
+                    preferences.edit().clear().apply()
+                    ussdSessionInProgress = false
+
+                    Log.i(
+                        TAG,
+                        "Sambaza result accepted by backend: $transferId"
+                    )
+                } else {
+                    preferences.edit()
+                        .putBoolean("report_in_progress", false)
+                        .apply()
+
+                    Log.e(
+                        TAG,
+                        "Sambaza result rejected: HTTP ${connection.responseCode}"
+                    )
+                }
+
+            } catch (e: Exception) {
+                preferences.edit()
+                    .putBoolean("report_in_progress", false)
+                    .apply()
+
+                Log.e(TAG, "Sambaza result reporting failed", e)
+
+            } finally {
+                connection?.disconnect()
+            }
+        }.start()
+        }
         private fun isSuccessfulSafaricomResponse(responseText: String): Boolean {
         val message = responseText.lowercase()
             .replace(Regex("\\s+"), " ")
