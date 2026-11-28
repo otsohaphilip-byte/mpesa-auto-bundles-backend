@@ -583,6 +583,85 @@ async function installUssdDevices(
       }
     }
   );
+    // Allow reseller gateway phones to claim Sambaza transfers
+  app.post(
+    "/api/ussd/airtime-transfers/claim",
+    async (req, res) => {
+      try {
+        const deviceToken = String(
+          req.headers["x-device-token"] || ""
+        );
+
+        if (!deviceToken) {
+          return res.status(401).json({
+            status: "ERROR",
+            message: "Gateway device token is required."
+          });
+        }
+
+        const tokenHash = crypto
+          .createHash("sha256")
+          .update(deviceToken)
+          .digest("hex");
+
+        const gateway = await pool.query(
+          `SELECT reseller_id
+           FROM reseller_ussd_devices
+           WHERE device_token_hash = $1`,
+          [tokenHash]
+        );
+
+        if (gateway.rows.length === 0) {
+          return res.status(401).json({
+            status: "ERROR",
+            message: "Invalid reseller gateway device token."
+          });
+        }
+
+        const resellerId = gateway.rows[0].reseller_id;
+
+        const result = await pool.query(
+          `WITH next_transfer AS (
+             SELECT id
+             FROM airtime_transfer_requests
+             WHERE reseller_id = $1
+               AND status = 'queued'
+             ORDER BY created_at ASC
+             LIMIT 1
+             FOR UPDATE SKIP LOCKED
+           )
+           UPDATE airtime_transfer_requests AS transfer
+           SET status = 'started',
+               updated_at = NOW()
+           FROM next_transfer
+           WHERE transfer.id = next_transfer.id
+           RETURNING transfer.id,
+                     transfer.airtime_amount,
+                     transfer.tokens_to_credit,
+                     transfer.destination_phone,
+                     transfer.ussd_code,
+                     transfer.status`,
+          [resellerId]
+        );
+
+        res.json({
+          status: "SUCCESS",
+          transfer: result.rows[0] || null
+        });
+
+      } catch (error) {
+        console.error(
+          "Sambaza transfer claim error:",
+          error
+        );
+
+        res.status(500).json({
+          status: "ERROR",
+          message: "Could not retrieve airtime transfer."
+        });
+      }
+    }
+  );
     // Receive delivery result from a registered gateway
   app.post(
     "/api/ussd/jobs/result",
