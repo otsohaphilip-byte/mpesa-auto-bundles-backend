@@ -884,6 +884,7 @@ class BundleAutomationAccessibilityService : AccessibilityService() {
                     }
 
                     reportingJobId = jobIdText
+                                        ownsReportingSlot = true
                 }
 
                 val preferencesName = if (role == "admin") {
