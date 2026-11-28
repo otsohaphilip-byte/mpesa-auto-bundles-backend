@@ -1092,19 +1092,31 @@ class BundleAutomationAccessibilityService : AccessibilityService() {
                         val serverResponse =
                             readConnectionResponse(connection)
 
-                        if (responseCode in 200..299) {
-                            database.markAsSynced(localId)
+                                                if (responseCode in 200..299) {
+                            database.markAsSynced(
+                                localId,
+                                resultStatus.uppercase()
+                            )
 
-                            val active = database.getActiveDelivery()
+                            val latestResult =
+                                database.getDeliveryResultForJob(
+                                    jobId.toString()
+                                )
 
                             if (
-                                active?.getAsString("job_id") ==
-                                jobId.toString()
+                                latestResult?.getAsString("result_status") ==
+                                resultStatus.uppercase()
                             ) {
-                                database.clearActiveDelivery()
-                                ussdSessionInProgress.set(false)
-                            }
+                                val active = database.getActiveDelivery()
 
+                                if (
+                                    active?.getAsString("job_id") ==
+                                    jobId.toString()
+                                ) {
+                                    database.clearActiveDelivery()
+                                    ussdSessionInProgress.set(false)
+                                }
+                            }
                             Log.i(
                                 TAG,
                                 "Pending delivery result synced: $jobId"
