@@ -636,18 +636,21 @@ val payload = JSONObject().apply {
                             )
                         }
 
-                        if (connection.responseCode == 200) {
+                                                if (connection.responseCode == 200) {
                             database.markAsSynced(localId)
+
                             val activeDelivery = database.getActiveDelivery()
 
-if (activeDelivery?.getAsString("job_id") == jobId.toString()) {
-    database.clearActiveDelivery()
-}
+                            if (activeDelivery?.getAsString("job_id") == jobId.toString()) {
+                                database.clearActiveDelivery()
+                                ussdSessionInProgress = false
+                            }
+
                             Log.i(
                                 TAG,
                                 "Pending delivery result synced: $jobId"
                             )
-                        }
+                                                }
 
                     } catch (e: Exception) {
                         Log.e(TAG, "Pending delivery sync failed", e)
