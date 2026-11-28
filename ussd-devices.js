@@ -662,7 +662,103 @@ async function installUssdDevices(
       }
     }
   );
-    // Receive delivery result from a registered gateway
+  // Receive Sambaza USSD execution result
+  app.post(
+    "/api/ussd/airtime-transfers/result",
+    async (req, res) => {
+      try {
+        const deviceToken = String(
+          req.headers["x-device-token"] || ""
+        );
+
+        const transferId = Number(req.body.transferId);
+        const transferStatus = String(
+          req.body.status || ""
+        );
+
+        if (!deviceToken) {
+          return res.status(401).json({
+            status: "ERROR",
+            message: "Gateway device token is required."
+          });
+        }
+
+        if (
+          !Number.isSafeInteger(transferId) ||
+          transferId <= 0 ||
+          ![
+            "awaiting_confirmation",
+            "failed",
+            "uncertain"
+          ].includes(transferStatus)
+        ) {
+          return res.status(400).json({
+            status: "ERROR",
+            message: "Invalid transfer result."
+          });
+        }
+
+        const tokenHash = crypto
+          .createHash("sha256")
+          .update(deviceToken)
+          .digest("hex");
+
+        const gateway = await pool.query(
+          `SELECT reseller_id
+           FROM reseller_ussd_devices
+           WHERE device_token_hash = $1`,
+          [tokenHash]
+        );
+
+        if (gateway.rows.length === 0) {
+          return res.status(401).json({
+            status: "ERROR",
+            message: "Invalid reseller gateway device token."
+          });
+        }
+
+        const result = await pool.query(
+          `UPDATE airtime_transfer_requests
+           SET status = $1,
+               updated_at = NOW()
+           WHERE id = $2
+             AND reseller_id = $3
+             AND status = 'started'
+           RETURNING id, status`,
+          [
+            transferStatus,
+            transferId,
+            gateway.rows[0].reseller_id
+          ]
+        );
+
+        if (result.rows.length === 0) {
+          return res.status(404).json({
+            status: "ERROR",
+            message: "Transfer not found or no longer active."
+          });
+        }
+
+        res.json({
+          status: "SUCCESS",
+          transfer: result.rows[0],
+          message: "USSD execution result recorded. Token credit still requires confirmation."
+        });
+
+      } catch (error) {
+        console.error(
+          "Sambaza transfer result error:",
+          error
+        );
+
+        res.status(500).json({
+          status: "ERROR",
+          message: "Could not record transfer result."
+        });
+      }
+    }
+  );
+  // Receive delivery result from a registered gateway
   app.post(
     "/api/ussd/jobs/result",
     async (req, res) => {
