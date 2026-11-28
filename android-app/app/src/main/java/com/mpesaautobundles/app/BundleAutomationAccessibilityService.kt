@@ -1757,5 +1757,7 @@ class BundleAutomationAccessibilityService : AccessibilityService() {
 
         private const val DELIVERY_TIMEOUT =
             60 * 1000L
+                private const val NETWORK_TIMEOUT =
+            20 * 1000
     }
 }
