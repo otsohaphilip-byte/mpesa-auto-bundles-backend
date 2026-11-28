@@ -47,65 +47,73 @@ class BundleAutomationAccessibilityService : AccessibilityService() {
 
     private val jobPollingRunnable = object : Runnable {
         override fun run() {
-            recoverStaleActiveDelivery()
-            syncPendingDeliveryResults()
-            recoverPendingAirtimeTransferResult()
+            try {
+                recoverStaleActiveDelivery()
+                syncPendingDeliveryResults()
+                recoverPendingAirtimeTransferResult()
 
-            val adminToken = getSharedPreferences(
-                ADMIN_GATEWAY_PREFS,
-                MODE_PRIVATE
-            ).getString("device_token", "") ?: ""
+                val adminToken = getSharedPreferences(
+                    ADMIN_GATEWAY_PREFS,
+                    MODE_PRIVATE
+                ).getString("device_token", "") ?: ""
 
-            val resellerToken = getSharedPreferences(
-                RESELLER_GATEWAY_PREFS,
-                MODE_PRIVATE
-            ).getString("device_token", "") ?: ""
+                val resellerToken = getSharedPreferences(
+                    RESELLER_GATEWAY_PREFS,
+                    MODE_PRIVATE
+                ).getString("device_token", "") ?: ""
 
-            val activeTransferId = getSharedPreferences(
-                ACTIVE_TRANSFER_PREFS,
-                MODE_PRIVATE
-            ).getLong("transfer_id", 0L)
+                val activeTransferId = getSharedPreferences(
+                    ACTIVE_TRANSFER_PREFS,
+                    MODE_PRIVATE
+                ).getLong("transfer_id", 0L)
 
-            val activeDelivery =
-                LocalDeliveryDatabase(this@BundleAutomationAccessibilityService)
-                    .getActiveDelivery()
+                val activeDelivery =
+                    LocalDeliveryDatabase(this@BundleAutomationAccessibilityService)
+                        .getActiveDelivery()
 
-            if (
-                !jobPollingInProgress.get() &&
-                !ussdSessionInProgress.get() &&
-                activeTransferId == 0L &&
-                activeDelivery == null
-            ) {
-                when {
-                    adminToken.isNotBlank() -> {
-                        claimAndStartGatewayJob(
-                            "admin",
-                            ADMIN_GATEWAY_PREFS
-                        )
-                    }
-
-                    resellerToken.isNotBlank() -> {
-                        if (nextResellerQueueIsAirtime) {
-                            claimAndStartAirtimeTransfer(
-                                RESELLER_GATEWAY_PREFS
-                            )
-                        } else {
+                if (
+                    !jobPollingInProgress.get() &&
+                    !ussdSessionInProgress.get() &&
+                    activeTransferId == 0L &&
+                    activeDelivery == null
+                ) {
+                    when {
+                        adminToken.isNotBlank() -> {
                             claimAndStartGatewayJob(
-                                "reseller",
-                                RESELLER_GATEWAY_PREFS
+                                "admin",
+                                ADMIN_GATEWAY_PREFS
                             )
                         }
 
-                        nextResellerQueueIsAirtime =
-                            !nextResellerQueueIsAirtime
+                        resellerToken.isNotBlank() -> {
+                            if (nextResellerQueueIsAirtime) {
+                                claimAndStartAirtimeTransfer(
+                                    RESELLER_GATEWAY_PREFS
+                                )
+                            } else {
+                                claimAndStartGatewayJob(
+                                    "reseller",
+                                    RESELLER_GATEWAY_PREFS
+                                )
+                            }
+
+                            nextResellerQueueIsAirtime =
+                                !nextResellerQueueIsAirtime
+                        }
                     }
                 }
+            } catch (e: Exception) {
+                Log.e(
+                    TAG,
+                    "Gateway polling cycle failed; polling will continue",
+                    e
+                )
+            } finally {
+                jobPollingHandler.postDelayed(
+                    this,
+                    JOB_POLL_INTERVAL
+                )
             }
-
-            jobPollingHandler.postDelayed(
-                this,
-                JOB_POLL_INTERVAL
-            )
         }
     }
 
