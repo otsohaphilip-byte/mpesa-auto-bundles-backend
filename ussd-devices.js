@@ -1059,7 +1059,9 @@ async function installUssdDevices(
         res.json({
           status: "SUCCESS",
           confirmation: finalConfirmation.rows[0],
-          message: "Sambaza SMS recorded. Token credit is not yet applied."
+          message: finalConfirmation.rows[0]?.verification_status === "credited"
+            ? "Airtime received and tokens credited successfully."
+            : "Sambaza SMS received but token credit was not confirmed."
         });
 
       } catch (error) {
