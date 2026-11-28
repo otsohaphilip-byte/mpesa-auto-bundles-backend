@@ -44,7 +44,7 @@ class AirtimeTransferSmsReceiver : BroadcastReceiver() {
             Context.MODE_PRIVATE
         )
 
-        synchronized(SMS_QUEUE_LOCK) {
+        synchronized(preferences) {
             val existing = try {
                 JSONArray(
                     preferences.getString(
