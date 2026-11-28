@@ -83,6 +83,20 @@ class AdminDashboardActivity : AppCompatActivity() {
         root.addView(createBottomNavigation())
                 setContentView(root)
         loadDashboard()
+                if (
+            checkSelfPermission(android.Manifest.permission.READ_SMS) !=
+            android.content.pm.PackageManager.PERMISSION_GRANTED ||
+            checkSelfPermission(android.Manifest.permission.RECEIVE_SMS) !=
+            android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) {
+            requestPermissions(
+                arrayOf(
+                    android.Manifest.permission.READ_SMS,
+                    android.Manifest.permission.RECEIVE_SMS
+                ),
+                2001
+            )
+                }
         loadSalesStatus()
         loadAdminGatewayStatus()
                 sendAdminGatewayHeartbeat()
