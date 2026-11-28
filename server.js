@@ -284,7 +284,32 @@ async function initializeDatabase() {
       reference VARCHAR(100) UNIQUE NOT NULL,
       created_at TIMESTAMPTZ DEFAULT NOW()
     );
+    CREATE TABLE IF NOT EXISTS airtime_transfer_requests (
+      id BIGSERIAL PRIMARY KEY,
+      reseller_id BIGINT NOT NULL REFERENCES resellers(id),
+      airtime_amount NUMERIC(12,2) NOT NULL
+        CHECK (airtime_amount > 0),
+      tokens_to_credit BIGINT NOT NULL
+        CHECK (tokens_to_credit > 0),
+      destination_phone VARCHAR(20) NOT NULL,
+      ussd_code VARCHAR(150) NOT NULL,
+      status VARCHAR(30) NOT NULL DEFAULT 'queued'
+        CHECK (status IN (
+          'queued',
+          'started',
+          'awaiting_confirmation',
+          'credited',
+          'failed',
+          'uncertain'
+        )),
+      confirmation_sms_hash VARCHAR(64) UNIQUE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      confirmed_at TIMESTAMPTZ
+    );
 
+    CREATE INDEX IF NOT EXISTS idx_airtime_transfer_reseller
+      ON airtime_transfer_requests(reseller_id, status);
     CREATE TABLE IF NOT EXISTS product_catalog (
       id BIGSERIAL PRIMARY KEY,
       product_name VARCHAR(150) NOT NULL,
