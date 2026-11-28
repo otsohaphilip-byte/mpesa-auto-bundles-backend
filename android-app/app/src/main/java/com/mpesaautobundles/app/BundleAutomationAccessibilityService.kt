@@ -824,7 +824,7 @@ class BundleAutomationAccessibilityService : AccessibilityService() {
             }
         }.start()
     }
-        private fun reportDeliveryResult(
+            private fun reportDeliveryResult(
         activeDelivery: ContentValues,
         status: String,
         responseText: String
@@ -840,14 +840,6 @@ class BundleAutomationAccessibilityService : AccessibilityService() {
                 Log.e(TAG, "Rejected invalid delivery result status: $status")
                 return
             }
-        }
-
-        synchronized(this) {
-            if (reportingJobId == jobIdText) {
-                return
-            }
-
-            reportingJobId = jobIdText
         }
 
         Thread {
@@ -872,6 +864,27 @@ class BundleAutomationAccessibilityService : AccessibilityService() {
                     safaricomResponse = responseText.take(2000)
                 )
 
+                val savedResult = database.getDeliveryResultForJob(jobIdText)
+                    ?: throw IllegalStateException(
+                        "Saved delivery result could not be loaded"
+                    )
+
+                val savedStatus = savedResult.getAsString("result_status")
+                    ?: throw IllegalStateException(
+                        "Saved delivery status is missing"
+                    )
+
+                val savedResponse = savedResult.getAsString("safaricom_response")
+                    ?: ""
+
+                synchronized(this@BundleAutomationAccessibilityService) {
+                    if (reportingJobId == jobIdText) {
+                        return@Thread
+                    }
+
+                    reportingJobId = jobIdText
+                }
+
                 val preferencesName = if (role == "admin") {
                     ADMIN_GATEWAY_PREFS
                 } else {
@@ -893,18 +906,10 @@ class BundleAutomationAccessibilityService : AccessibilityService() {
                         "Delivery job ID is invalid"
                     )
 
-                val savedStatus = database
-                    .getDeliveryResultStatusForJob(jobIdText)
-                    ?.lowercase()
-                    ?: status.lowercase()
-
                 val payload = JSONObject().apply {
                     put("job_id", jobId)
-                    put("status", savedStatus)
-                    put(
-                        "safaricom_response",
-                        responseText.take(2000)
-                    )
+                    put("status", savedStatus.lowercase())
+                    put("safaricom_response", savedResponse.take(2000))
                 }
 
                 connection = openPost(
@@ -922,17 +927,28 @@ class BundleAutomationAccessibilityService : AccessibilityService() {
                 val serverResponse = readConnectionResponse(connection)
 
                 if (responseCode in 200..299) {
-                    database.markAsSynced(localId)
+                    database.markAsSynced(
+                        localId,
+                        savedStatus
+                    )
 
-                    val currentActive = database.getActiveDelivery()
+                    val latestResult =
+                        database.getDeliveryResultForJob(jobIdText)
 
                     if (
-                        currentActive?.getAsString("job_id") == jobIdText
+                        latestResult?.getAsString("result_status") ==
+                        savedStatus
                     ) {
-                        database.clearActiveDelivery()
+                        val currentActive = database.getActiveDelivery()
+
+                        if (
+                            currentActive?.getAsString("job_id") == jobIdText
+                        ) {
+                            database.clearActiveDelivery()
+                            ussdSessionInProgress.set(false)
+                        }
                     }
 
-                    ussdSessionInProgress.set(false)
                     reportAccepted = true
 
                     Log.i(
@@ -968,8 +984,7 @@ class BundleAutomationAccessibilityService : AccessibilityService() {
                 }
             }
         }.start()
-    }
-
+            }
     private fun recoverStaleActiveDelivery() {
         val database = LocalDeliveryDatabase(this)
         val activeDelivery = database.getActiveDelivery() ?: return
