@@ -138,8 +138,10 @@ private var pendingSyncInProgress = false
             )
         }
             }
-    override fun onServiceConnected() {
-                    val activeTransferId = getSharedPreferences(
+        override fun onServiceConnected() {
+        super.onServiceConnected()
+
+        val activeTransferId = getSharedPreferences(
             "active_airtime_transfer",
             MODE_PRIVATE
         ).getLong("transfer_id", 0L)
@@ -151,8 +153,6 @@ private var pendingSyncInProgress = false
                 "Restored active Sambaza session: $activeTransferId"
             )
         }
-        super.onServiceConnected()
-
         getSharedPreferences("app_setup", MODE_PRIVATE)
             .edit()
             .putBoolean("accessibility_was_enabled", true)
