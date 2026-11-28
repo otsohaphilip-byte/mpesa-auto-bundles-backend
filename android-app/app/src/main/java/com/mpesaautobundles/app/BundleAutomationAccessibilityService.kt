@@ -35,6 +35,31 @@ class BundleAutomationAccessibilityService : AccessibilityService() {
     private var ussdSessionInProgress = false
         @Volatile
 private var pendingSyncInProgress = false
+                    if (adminToken.isNotBlank()) {
+                claimAndStartGatewayJob(
+                    "admin",
+                    "admin_agent_gateway"
+                )
+            } else if (resellerToken.isNotBlank()) {
+                if (
+                    !jobPollingInProgress &&
+                    !ussdSessionInProgress &&
+                    LocalDeliveryDatabase(this)
+                        .getActiveDelivery() == null
+                ) {
+                    if (nextResellerQueueIsAirtime) {
+                        claimAndStartAirtimeTransfer("agent_gateway")
+                    } else {
+                        claimAndStartGatewayJob(
+                            "reseller",
+                            "agent_gateway"
+                        )
+                    }
+
+                    nextResellerQueueIsAirtime =
+                        !nextResellerQueueIsAirtime
+                }
+                    }
 
     private val jobPollingRunnable = object : Runnable {
         override fun run() {
