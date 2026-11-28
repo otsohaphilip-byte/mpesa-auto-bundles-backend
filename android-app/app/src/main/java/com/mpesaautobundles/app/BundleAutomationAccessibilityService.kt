@@ -246,6 +246,7 @@ private var pendingSyncInProgress = false
 
                 if (!launchUssdCall(ussdCode)) {
                     Log.e(TAG, "Could not launch USSD for job $jobId")
+                                    ussdSessionInProgress = true
                 }
                                 Handler(Looper.getMainLooper()).postDelayed({
                     val pendingDelivery =
