@@ -1128,6 +1128,86 @@ const cleanEmail = String(email || "").trim().toLowerCase();
 });
 
 // ==============================
+// RESELLER AIRTIME TOKEN PURCHASE
+// ==============================
+
+app.post(
+  "/api/tokens/purchase/airtime",
+  authenticateToken,
+  requireReseller,
+  async (req, res) => {
+    try {
+      const amount = Number(req.body.amount);
+
+      if (
+        !Number.isSafeInteger(amount) ||
+        amount <= 0
+      ) {
+        return sendError(
+          res,
+          400,
+          "Enter a valid whole-number airtime amount."
+        );
+      }
+
+      const adminPhone = process.env.ADMIN_TILL_PHONE;
+
+      if (!adminPhone) {
+        return sendError(
+          res,
+          503,
+          "Administrator gateway phone is not configured."
+        );
+      }
+
+      const destinationPhone =
+        normalizePhoneForUssd(adminPhone);
+
+      const tokensToCredit = amount * 5;
+
+      const ussdCode =
+        `*140*${amount}*${destinationPhone}#`;
+
+      const result = await pool.query(
+        `INSERT INTO airtime_transfer_requests (
+           reseller_id,
+           airtime_amount,
+           tokens_to_credit,
+           destination_phone,
+           ussd_code
+         )
+         VALUES ($1, $2, $3, $4, $5)
+         RETURNING id, airtime_amount,
+                   tokens_to_credit, status, created_at`,
+        [
+          req.user.resellerId,
+          amount,
+          tokensToCredit,
+          destinationPhone,
+          ussdCode
+        ]
+      );
+
+      res.status(201).json({
+        status: "OK",
+        message: "Airtime transfer request created.",
+        transfer: result.rows[0]
+      });
+    } catch (error) {
+      console.error(
+        "Airtime token purchase request error:",
+        error
+      );
+
+      sendError(
+        res,
+        500,
+        "Unable to create airtime transfer request."
+      );
+    }
+  }
+);
+// ==============================
 // RESELLER PROFILE
 // ==============================
 
