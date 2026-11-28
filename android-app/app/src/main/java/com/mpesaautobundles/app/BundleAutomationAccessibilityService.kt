@@ -658,43 +658,152 @@ if (activeDelivery?.getAsString("job_id") == jobId.toString()) {
             }
         }.start()
                         }
-    private fun launchUssdCall(ussdCode: String): Boolean {
-        val code = ussdCode.trim()
+private fun launchUssdCall(ussdCode: String): Boolean {
+    val code = ussdCode.trim()
 
-        if (
-            !code.startsWith("*") ||
-            !code.endsWith("#") ||
-            code.any {
-                !it.isDigit() && it != '*' && it != '#'
-            }
-        ) {
-            Log.e(TAG, "Invalid USSD code")
-            return false
+    if (
+        !code.startsWith("*") ||
+        !code.endsWith("#") ||
+        code.any {
+            !it.isDigit() && it != '*' && it != '#'
         }
-
-        if (
-            checkSelfPermission(android.Manifest.permission.CALL_PHONE) !=
-            android.content.pm.PackageManager.PERMISSION_GRANTED
-        ) {
-            Log.e(TAG, "CALL_PHONE permission not granted")
-            return false
-        }
-
-        return try {
-            val intent = Intent(Intent.ACTION_CALL).apply {
-                data = Uri.parse("tel:${Uri.encode(code)}")
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            }
-
-            startActivity(intent)
-            Log.i(TAG, "USSD call launched")
-            true
-
-        } catch (e: Exception) {
-            Log.e(TAG, "Could not launch USSD call", e)
-            false
-        }
+    ) {
+        Log.e(TAG, "Invalid USSD code")
+        return false
     }
+
+    if (
+        checkSelfPermission(android.Manifest.permission.CALL_PHONE) !=
+        android.content.pm.PackageManager.PERMISSION_GRANTED
+    ) {
+        Log.e(TAG, "CALL_PHONE permission not granted")
+        return false
+    }
+
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+        Log.w(TAG, "Android USSD API unavailable; using Accessibility fallback")
+        return launchAccessibilityFallback(code)
+    }
+
+    if (
+        checkSelfPermission(android.Manifest.permission.READ_PHONE_STATE) !=
+        android.content.pm.PackageManager.PERMISSION_GRANTED
+    ) {
+        Log.e(TAG, "READ_PHONE_STATE permission required to select SIM 1")
+        return false
+    }
+
+    return try {
+        val subscriptionManager =
+            getSystemService(SubscriptionManager::class.java)
+
+        val gatewaySim = subscriptionManager
+            .activeSubscriptionInfoList
+            ?.firstOrNull { it.simSlotIndex == 0 }
+
+        if (gatewaySim == null) {
+            Log.e(TAG, "Safaricom gateway SIM not found in SIM 1")
+            return false
+        }
+
+        val baseTelephonyManager =
+            getSystemService(TelephonyManager::class.java)
+
+        val telephonyManager =
+            baseTelephonyManager.createForSubscriptionId(
+                gatewaySim.subscriptionId
+            )
+
+        telephonyManager.sendUssdRequest(
+            code,
+            object : TelephonyManager.UssdResponseCallback() {
+
+                override fun onReceiveUssdResponse(
+                    telephonyManager: TelephonyManager,
+                    request: String,
+                    response: CharSequence
+                ) {
+                    val message = response.toString()
+                    Log.i(TAG, "Android USSD API response: $message")
+
+                    val activeDelivery =
+                        LocalDeliveryDatabase(this@BundleAutomationAccessibilityService)
+                            .getActiveDelivery()
+
+                    if (activeDelivery != null) {
+                        when {
+                            isSuccessfulSafaricomResponse(message) -> {
+                                reportDeliveryResult(
+                                    activeDelivery,
+                                    "success",
+                                    message
+                                )
+                            }
+
+                            isFailedSafaricomResponse(message) -> {
+                                reportDeliveryResult(
+                                    activeDelivery,
+                                    "failed",
+                                    message
+                                )
+                            }
+
+                            else -> {
+                                Log.w(
+                                    TAG,
+                                    "USSD response needs review; not retrying automatically"
+                                )
+                                reportDeliveryResult(
+                                    activeDelivery,
+                                    "uncertain",
+                                    message
+                                )
+                            }
+                        }
+                    }
+                }
+
+                override fun onReceiveUssdResponseFailed(
+                    telephonyManager: TelephonyManager,
+                    request: String,
+                    failureCode: Int
+                ) {
+                    Log.e(
+                        TAG,
+                        "Android USSD API failed: $failureCode. Starting Accessibility fallback."
+                    )
+
+                    launchAccessibilityFallback(code)
+                }
+            },
+            Handler(Looper.getMainLooper())
+        )
+
+        Log.i(TAG, "USSD request sent using Android API on SIM 1")
+        true
+
+    } catch (e: Exception) {
+        Log.e(TAG, "Android USSD API could not start", e)
+        launchAccessibilityFallback(code)
+    }
+}
+
+private fun launchAccessibilityFallback(ussdCode: String): Boolean {
+    return try {
+        val intent = Intent(Intent.ACTION_CALL).apply {
+            data = Uri.parse("tel:${Uri.encode(ussdCode)}")
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+
+        startActivity(intent)
+        Log.i(TAG, "Accessibility USSD fallback launched")
+        true
+
+    } catch (e: Exception) {
+        Log.e(TAG, "Accessibility fallback could not launch", e)
+        false
+    }
+}
 
     override fun onInterrupt() {
         heartbeatHandler.removeCallbacks(heartbeatRunnable)
