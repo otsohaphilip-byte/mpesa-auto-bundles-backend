@@ -35,7 +35,25 @@ class BundleAutomationAccessibilityService : AccessibilityService() {
     private var ussdSessionInProgress = false
         @Volatile
 private var pendingSyncInProgress = false
-                    if (adminToken.isNotBlank()) {
+             @Volatile
+    private var nextResellerQueueIsAirtime = false
+
+    private val jobPollingRunnable = object : Runnable {
+        override fun run() {
+            recoverStaleActiveDelivery()
+            syncPendingDeliveryResults()
+
+            val adminToken = getSharedPreferences(
+                "admin_agent_gateway",
+                MODE_PRIVATE
+            ).getString("device_token", "") ?: ""
+
+            val resellerToken = getSharedPreferences(
+                "agent_gateway",
+                MODE_PRIVATE
+            ).getString("device_token", "") ?: ""
+
+            if (adminToken.isNotBlank()) {
                 claimAndStartGatewayJob(
                     "admin",
                     "admin_agent_gateway"
@@ -44,7 +62,7 @@ private var pendingSyncInProgress = false
                 if (
                     !jobPollingInProgress &&
                     !ussdSessionInProgress &&
-                    LocalDeliveryDatabase(this)
+                    LocalDeliveryDatabase(this@BundleAutomationAccessibilityService)
                         .getActiveDelivery() == null
                 ) {
                     if (nextResellerQueueIsAirtime) {
@@ -59,34 +77,14 @@ private var pendingSyncInProgress = false
                     nextResellerQueueIsAirtime =
                         !nextResellerQueueIsAirtime
                 }
-                    }
-
-    private val jobPollingRunnable = object : Runnable {
-        override fun run() {
-                recoverStaleActiveDelivery()
-                syncPendingDeliveryResults()
-            val adminToken = getSharedPreferences(
-                "admin_agent_gateway",
-                MODE_PRIVATE
-            ).getString("device_token", "") ?: ""
-
-            val resellerToken = getSharedPreferences(
-                "agent_gateway",
-                MODE_PRIVATE
-            ).getString("device_token", "") ?: ""
-
-            if (adminToken.isNotBlank()) {
-                claimAndStartGatewayJob("admin", "admin_agent_gateway")
-                                    } else if (resellerToken.isNotBlank()) {
-                claimAndStartGatewayJob("reseller", "agent_gateway")
             }
-                        if (resellerToken.isNotBlank()) {
-                claimAndStartAirtimeTransfer("agent_gateway")
-                        }
 
-            jobPollingHandler.postDelayed(this, JOB_POLL_INTERVAL)
+            jobPollingHandler.postDelayed(
+                this,
+                JOB_POLL_INTERVAL
+            )
         }
-    }
+    }           
     override fun onServiceConnected() {
         super.onServiceConnected()
 
