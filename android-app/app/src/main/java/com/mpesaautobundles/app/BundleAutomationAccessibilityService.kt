@@ -111,11 +111,7 @@ private var pendingSyncInProgress = false
             ""
         ) ?: ""
 
-        if (savedStatus.isNotBlank()) {
-            preferences.edit()
-                .putBoolean("report_in_progress", false)
-                .apply()
-
+                if (savedStatus.isNotBlank()) {
             reportAirtimeTransferResult(
                 transferId,
                 savedStatus,
@@ -125,7 +121,7 @@ private var pendingSyncInProgress = false
             )
 
             return
-        }
+                }
 
         if (
             startedAt > 0L &&
