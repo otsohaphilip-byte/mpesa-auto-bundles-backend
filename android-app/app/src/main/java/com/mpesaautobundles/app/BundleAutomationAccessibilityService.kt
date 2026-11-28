@@ -31,6 +31,8 @@ class BundleAutomationAccessibilityService : AccessibilityService() {
 
     @Volatile
     private var jobPollingInProgress = false
+            @Volatile
+    private var ussdSessionInProgress = false
         @Volatile
 private var pendingSyncInProgress = false
 
