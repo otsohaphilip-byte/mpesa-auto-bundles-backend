@@ -662,6 +662,7 @@ if (activeDelivery?.getAsString("job_id") == jobId.toString()) {
                     pendingSyncInProgress = false
                 }
             }
+                                        ussdSessionInProgress = false
         }.start()
                         }
                             private fun claimAndStartAirtimeTransfer(
