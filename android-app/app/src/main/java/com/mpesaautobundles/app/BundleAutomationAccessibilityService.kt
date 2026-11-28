@@ -1,82 +1,104 @@
 package com.mpesaautobundles.app
 
+import android.Manifest
 import android.accessibilityservice.AccessibilityService
+import android.content.ContentValues
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
-import android.util.Log
-import android.os.Build
 import android.telephony.SubscriptionManager
 import android.telephony.TelephonyManager
+import android.util.Log
 import android.view.accessibility.AccessibilityEvent
+import android.view.accessibility.AccessibilityNodeInfo
+import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
-import org.json.JSONObject
+import java.util.concurrent.atomic.AtomicBoolean
 
 class BundleAutomationAccessibilityService : AccessibilityService() {
-        @Volatile
-    private var reportingJobId: String? = null
 
     private val heartbeatHandler = Handler(Looper.getMainLooper())
+    private val jobPollingHandler = Handler(Looper.getMainLooper())
+
+    private val jobPollingInProgress = AtomicBoolean(false)
+    private val ussdSessionInProgress = AtomicBoolean(false)
+    private val pendingSyncInProgress = AtomicBoolean(false)
+
+    @Volatile
+    private var reportingJobId: String? = null
+
+    private var nextResellerQueueIsAirtime = false
 
     private val heartbeatRunnable = object : Runnable {
         override fun run() {
             sendAdminGatewayHeartbeat()
-                        sendResellerGatewayHeartbeat()
-            heartbeatHandler.postDelayed(this, HEARTBEAT_INTERVAL)
+            sendResellerGatewayHeartbeat()
+
+            heartbeatHandler.postDelayed(
+                this,
+                HEARTBEAT_INTERVAL
+            )
         }
     }
-    private val jobPollingHandler = Handler(Looper.getMainLooper())
 
-    @Volatile
-    private var jobPollingInProgress = false
-            @Volatile
-    private var ussdSessionInProgress = false
-        @Volatile
-private var pendingSyncInProgress = false
-             @Volatile
-    private var nextResellerQueueIsAirtime = false
-
-        private val jobPollingRunnable = object : Runnable {
+    private val jobPollingRunnable = object : Runnable {
         override fun run() {
             recoverStaleActiveDelivery()
             syncPendingDeliveryResults()
             recoverPendingAirtimeTransferResult()
 
             val adminToken = getSharedPreferences(
-                "admin_agent_gateway",
+                ADMIN_GATEWAY_PREFS,
                 MODE_PRIVATE
             ).getString("device_token", "") ?: ""
 
             val resellerToken = getSharedPreferences(
-                "agent_gateway",
+                RESELLER_GATEWAY_PREFS,
                 MODE_PRIVATE
             ).getString("device_token", "") ?: ""
 
-            if (adminToken.isNotBlank()) {
-                claimAndStartGatewayJob(
-                    "admin",
-                    "admin_agent_gateway"
-                )
-            } else if (resellerToken.isNotBlank()) {
-                if (
-                    !jobPollingInProgress &&
-                    !ussdSessionInProgress &&
-                    LocalDeliveryDatabase(this@BundleAutomationAccessibilityService)
-                        .getActiveDelivery() == null
-                ) {
-                    if (nextResellerQueueIsAirtime) {
-                        claimAndStartAirtimeTransfer("agent_gateway")
-                    } else {
+            val activeTransferId = getSharedPreferences(
+                ACTIVE_TRANSFER_PREFS,
+                MODE_PRIVATE
+            ).getLong("transfer_id", 0L)
+
+            val activeDelivery =
+                LocalDeliveryDatabase(this@BundleAutomationAccessibilityService)
+                    .getActiveDelivery()
+
+            if (
+                !jobPollingInProgress.get() &&
+                !ussdSessionInProgress.get() &&
+                activeTransferId == 0L &&
+                activeDelivery == null
+            ) {
+                when {
+                    adminToken.isNotBlank() -> {
                         claimAndStartGatewayJob(
-                            "reseller",
-                            "agent_gateway"
+                            "admin",
+                            ADMIN_GATEWAY_PREFS
                         )
                     }
 
-                    nextResellerQueueIsAirtime =
-                        !nextResellerQueueIsAirtime
+                    resellerToken.isNotBlank() -> {
+                        if (nextResellerQueueIsAirtime) {
+                            claimAndStartAirtimeTransfer(
+                                RESELLER_GATEWAY_PREFS
+                            )
+                        } else {
+                            claimAndStartGatewayJob(
+                                "reseller",
+                                RESELLER_GATEWAY_PREFS
+                            )
+                        }
+
+                        nextResellerQueueIsAirtime =
+                            !nextResellerQueueIsAirtime
+                    }
                 }
             }
 
@@ -85,70 +107,26 @@ private var pendingSyncInProgress = false
                 JOB_POLL_INTERVAL
             )
         }
-        }
-            private fun recoverPendingAirtimeTransferResult() {
-        val preferences = getSharedPreferences(
-            "active_airtime_transfer",
-            MODE_PRIVATE
-        )
+    }
 
-        val transferId = preferences.getLong("transfer_id", 0L)
-
-        if (transferId <= 0L) {
-            return
-        }
-
-        ussdSessionInProgress = true
-
-        val startedAt = preferences.getLong("started_at", 0L)
-        val savedStatus = preferences.getString(
-            "result_status",
-            ""
-        ) ?: ""
-
-        val savedResponse = preferences.getString(
-            "response_text",
-            ""
-        ) ?: ""
-
-                if (savedStatus.isNotBlank()) {
-            reportAirtimeTransferResult(
-                transferId,
-                savedStatus,
-                savedResponse.ifBlank {
-                    "Retrying saved Sambaza result after service recovery"
-                }
-            )
-
-            return
-                }
-
-        if (
-            startedAt > 0L &&
-            System.currentTimeMillis() - startedAt >= 60000
-        ) {
-            reportAirtimeTransferResult(
-                transferId,
-                "uncertain",
-                "Sambaza result recovery timeout: no definitive response was saved"
-            )
-        }
-            }
-        override fun onServiceConnected() {
+    override fun onServiceConnected() {
         super.onServiceConnected()
 
         val activeTransferId = getSharedPreferences(
-            "active_airtime_transfer",
+            ACTIVE_TRANSFER_PREFS,
             MODE_PRIVATE
         ).getLong("transfer_id", 0L)
 
         if (activeTransferId > 0L) {
-            ussdSessionInProgress = true
-            Log.i(
-                TAG,
-                "Restored active Sambaza session: $activeTransferId"
-            )
+            ussdSessionInProgress.set(true)
         }
+
+        if (
+            LocalDeliveryDatabase(this).getActiveDelivery() != null
+        ) {
+            ussdSessionInProgress.set(true)
+        }
+
         getSharedPreferences("app_setup", MODE_PRIVATE)
             .edit()
             .putBoolean("accessibility_was_enabled", true)
@@ -160,253 +138,423 @@ private var pendingSyncInProgress = false
 
         heartbeatHandler.removeCallbacks(heartbeatRunnable)
         heartbeatHandler.post(heartbeatRunnable)
+
         jobPollingHandler.removeCallbacks(jobPollingRunnable)
         jobPollingHandler.post(jobPollingRunnable)
+
         Log.i(TAG, "Bundle automation service connected")
     }
 
-        private fun sendAdminGatewayHeartbeat() {
+    private fun sendAdminGatewayHeartbeat() {
+        sendGatewayHeartbeat(
+            ADMIN_GATEWAY_PREFS,
+            "$BASE_URL/api/admin/ussd/device/heartbeat",
+            "Admin"
+        )
+    }
+
+    private fun sendResellerGatewayHeartbeat() {
+        sendGatewayHeartbeat(
+            RESELLER_GATEWAY_PREFS,
+            "$BASE_URL/api/reseller/ussd/device/heartbeat",
+            "Reseller"
+        )
+    }
+
+    private fun sendGatewayHeartbeat(
+        preferencesName: String,
+        endpoint: String,
+        label: String
+    ) {
         Thread {
             var connection: HttpURLConnection? = null
 
             try {
-                val deviceToken = getSharedPreferences(
-                    "admin_agent_gateway",
+                val token = getSharedPreferences(
+                    preferencesName,
                     MODE_PRIVATE
                 ).getString("device_token", "") ?: ""
 
-                if (deviceToken.isBlank()) return@Thread
+                if (token.isBlank()) return@Thread
 
-                connection = URL(
-                    "https://mpesa-auto-bundles-backend.onrender.com/api/admin/ussd/device/heartbeat"
-                ).openConnection() as HttpURLConnection
-
-                connection.requestMethod = "POST"
-                connection.connectTimeout = 20000
-                connection.readTimeout = 20000
-                connection.doOutput = true
-
-                connection.setRequestProperty("X-Device-Token", deviceToken)
-                connection.setRequestProperty("Content-Type", "application/json")
+                connection = openPost(endpoint, token)
 
                 connection.outputStream.use {
                     it.write("{}".toByteArray(Charsets.UTF_8))
                 }
 
-                Log.i(TAG, "Admin gateway heartbeat HTTP ${connection.responseCode}")
-
+                Log.i(
+                    TAG,
+                    "$label gateway heartbeat HTTP ${connection.responseCode}"
+                )
             } catch (e: Exception) {
-                Log.e(TAG, "Admin gateway heartbeat failed", e)
+                Log.e(TAG, "$label gateway heartbeat failed", e)
             } finally {
                 connection?.disconnect()
             }
         }.start()
     }
 
-    private fun sendResellerGatewayHeartbeat() {
-        Thread {
-            var connection: HttpURLConnection? = null
+    private fun openPost(
+        endpoint: String,
+        deviceToken: String
+    ): HttpURLConnection {
+        return (URL(endpoint).openConnection() as HttpURLConnection).apply {
+            requestMethod = "POST"
+            connectTimeout = NETWORK_TIMEOUT
+            readTimeout = NETWORK_TIMEOUT
+            doOutput = true
 
-            try {
-                val deviceToken = getSharedPreferences(
-                    "agent_gateway",
-                    MODE_PRIVATE
-                ).getString("device_token", "") ?: ""
+            setRequestProperty(
+                "X-Device-Token",
+                deviceToken
+            )
 
-                if (deviceToken.isBlank()) return@Thread
+            setRequestProperty(
+                "Content-Type",
+                "application/json"
+            )
+        }
+    }
 
-                connection = URL(
-                    "https://mpesa-auto-bundles-backend.onrender.com/api/reseller/ussd/device/heartbeat"
-                ).openConnection() as HttpURLConnection
+    private fun readConnectionResponse(
+        connection: HttpURLConnection
+    ): String {
+        val stream = if (connection.responseCode in 200..299) {
+            connection.inputStream
+        } else {
+            connection.errorStream
+        }
 
-                connection.requestMethod = "POST"
-                connection.connectTimeout = 20000
-                connection.readTimeout = 20000
-                connection.doOutput = true
+        return stream?.bufferedReader()?.use {
+            it.readText()
+        } ?: ""
+    }
 
-                connection.setRequestProperty("X-Device-Token", deviceToken)
-                connection.setRequestProperty("Content-Type", "application/json")
+    private fun isValidUssdCode(code: String): Boolean {
+        val value = code.trim()
 
-                connection.outputStream.use {
-                    it.write("{}".toByteArray(Charsets.UTF_8))
-                }
-
-                Log.i(TAG, "Reseller gateway heartbeat HTTP ${connection.responseCode}")
-
-            } catch (e: Exception) {
-                Log.e(TAG, "Reseller gateway heartbeat failed", e)
-            } finally {
-                connection?.disconnect()
+        return value.length in 3..150 &&
+            value.startsWith("*") &&
+            value.endsWith("#") &&
+            value.all {
+                it.isDigit() || it == '*' || it == '#'
             }
-        }.start()
+    }
+
+    private fun isKenyanLocalPhone(phone: String): Boolean {
+        return Regex("^(07|01)\\d{8}$").matches(
+            phone.filter { it.isDigit() }
+        )
+    }
+
+    private fun getGatewayDeviceToken(
+        preferencesName: String
+    ): String {
+        return getSharedPreferences(
+            preferencesName,
+            MODE_PRIVATE
+        ).getString("device_token", "") ?: ""
     }
         private fun claimAndStartGatewayJob(
         role: String,
         preferencesName: String
     ) {
-
-                if (jobPollingInProgress || ussdSessionInProgress) return
-        jobPollingInProgress = true
+        if (!jobPollingInProgress.compareAndSet(false, true)) {
+            return
+        }
 
         Thread {
             var connection: HttpURLConnection? = null
 
             try {
-                if (LocalDeliveryDatabase(this).getActiveDelivery() != null) {
+                val database = LocalDeliveryDatabase(this)
+
+                if (
+                    ussdSessionInProgress.get() ||
+                    database.getActiveDelivery() != null
+                ) {
                     return@Thread
                 }
 
-                val deviceToken = getSharedPreferences(
-                    preferencesName,
-                    MODE_PRIVATE
-                ).getString("device_token", "") ?: ""
+                val deviceToken = getGatewayDeviceToken(
+                    preferencesName
+                )
 
                 if (deviceToken.isBlank()) return@Thread
 
-                connection = URL(
-                    "https://mpesa-auto-bundles-backend.onrender.com/api/ussd/jobs/claim"
-                ).openConnection() as HttpURLConnection
-
-                connection.requestMethod = "POST"
-                connection.connectTimeout = 15000
-                connection.readTimeout = 15000
-                connection.doOutput = true
-
-                connection.setRequestProperty("X-Device-Token", deviceToken)
-                connection.setRequestProperty("Content-Type", "application/json")
+                connection = openPost(
+                    "$BASE_URL/api/ussd/jobs/claim",
+                    deviceToken
+                )
 
                 connection.outputStream.use {
                     it.write("{}".toByteArray(Charsets.UTF_8))
                 }
 
-                if (connection.responseCode != 200) {
-                    Log.e(TAG, "Job claim failed: HTTP ${connection.responseCode}")
+                val responseCode = connection.responseCode
+                val responseText = readConnectionResponse(connection)
+
+                if (responseCode !in 200..299) {
+                    Log.e(
+                        TAG,
+                        "Delivery job claim failed: HTTP $responseCode $responseText"
+                    )
                     return@Thread
                 }
 
-                val response = connection.inputStream
-                    .bufferedReader()
-                    .use { it.readText() }
-
-                val job = JSONObject(response).optJSONObject("job")
+                val job = JSONObject(responseText)
+                    .optJSONObject("job")
                     ?: return@Thread
 
                 val jobId = job.optString("id", "")
                 val jobRole = job.optString("gateway_role", "")
+
                 val ownerId = if (role == "admin") {
                     job.optString("admin_phone", "")
                 } else {
                     job.optString("reseller_id", "")
                 }
 
-                val phone = job.optString("destination_phone", "")
-                val offerId = job.optString("offer_id", "")
-                val offerName = job.optString("offer_name", "")
-                val amount = job.optDouble("amount", -1.0)
-                val ussdCode = job.optString("ussd_code", "")
+                val destinationPhone = job.optString(
+                    "destination_phone",
+                    ""
+                )
 
-                if (
-                    jobId.isBlank() ||
-                    jobRole != role ||
-                    ownerId.isBlank() ||
-                    phone.isBlank() ||
-                    offerName.isBlank() ||
-                    amount < 0 ||
-                    ussdCode.isBlank()
-                ) {
-                    Log.e(TAG, "Claimed job has incomplete or mismatched details")
+                val offerId = job.optString(
+                    "offer_id",
+                    ""
+                )
+
+                val offerName = job.optString(
+                    "offer_name",
+                    ""
+                )
+
+                val amount = job.optDouble(
+                    "amount",
+                    -1.0
+                )
+
+                val ussdCode = job.optString(
+                    "ussd_code",
+                    ""
+                )
+
+                val validJob =
+                    jobId.toLongOrNull()?.let { it > 0L } == true &&
+                    jobRole == role &&
+                    ownerId.isNotBlank() &&
+                    isKenyanLocalPhone(destinationPhone) &&
+                    offerName.isNotBlank() &&
+                    amount >= 0.0 &&
+                    isValidUssdCode(ussdCode)
+
+                if (!validJob) {
+                    Log.e(
+                        TAG,
+                        "Claimed delivery job has invalid or mismatched details: $jobId"
+                    )
+
+                    reportUnstartedDeliveryJob(
+                        jobId,
+                        deviceToken,
+                        "Claimed job contains invalid or incomplete delivery details"
+                    )
                     return@Thread
                 }
 
-                LocalDeliveryDatabase(this).saveActiveDelivery(
-                    role,
-                    ownerId,
-                    phone,
-                    offerId,
-                    offerName,
-                    amount,
-                    ussdCode,
-                    jobId
+                if (
+                    ussdSessionInProgress.get() ||
+                    database.getActiveDelivery() != null
+                ) {
+                    reportUnstartedDeliveryJob(
+                        jobId,
+                        deviceToken,
+                        "Gateway was busy before this delivery could start"
+                    )
+                    return@Thread
+                }
+
+                if (
+                    !ussdSessionInProgress.compareAndSet(false, true)
+                ) {
+                    reportUnstartedDeliveryJob(
+                        jobId,
+                        deviceToken,
+                        "Another USSD session started before this delivery"
+                    )
+                    return@Thread
+                }
+
+                database.saveActiveDelivery(
+                    role = role,
+                    ownerId = ownerId,
+                    phone = destinationPhone,
+                    offerId = offerId,
+                    offerName = offerName,
+                    sellingPrice = amount,
+                    ussdCode = ussdCode,
+                    jobId = jobId
                 )
 
-                Log.i(TAG, "Saved delivery job $jobId locally")
+                Log.i(
+                    TAG,
+                    "Delivery job $jobId saved locally; starting USSD"
+                )
 
-                                ussdSessionInProgress = true
+                val launchResult = launchUssdCall(ussdCode)
 
-                if (!launchUssdCall(ussdCode)) {
-                    Log.e(TAG, "Could not launch USSD for job $jobId")
-                    ussdSessionInProgress = false
-                }
-                                Handler(Looper.getMainLooper()).postDelayed({
-                    val pendingDelivery =
-                        LocalDeliveryDatabase(this).getActiveDelivery()
+                if (launchResult == UssdLaunchResult.NOT_SENT) {
+                    val active = database.getActiveDelivery()
 
-                    if (pendingDelivery?.getAsString("job_id") == jobId) {
-                        val startedAt =
-                            pendingDelivery.getAsLong("started_at") ?: 0L
-
-                        val elapsed =
-                            System.currentTimeMillis() - startedAt
-
-                        if (elapsed >= 60000) {
-                            Log.w(
-                                TAG,
-                                "USSD delivery reached 60-second timeout"
-                            )
-
-                            reportDeliveryResult(
-                                pendingDelivery,
-                                "uncertain",
-                                "No definitive Safaricom response within 60 seconds"
-                            )
-                        }
+                    if (active?.getAsString("job_id") == jobId) {
+                        reportDeliveryResult(
+                            active,
+                            "failed",
+                            "USSD request could not be launched. No request was sent."
+                        )
                     }
-                }, 60000)
+                    return@Thread
+                }
+
+                scheduleDeliveryTimeout(jobId)
 
             } catch (e: Exception) {
-                Log.e(TAG, "Gateway job polling failed", e)
+                Log.e(
+                    TAG,
+                    "Gateway delivery job processing failed",
+                    e
+                )
             } finally {
                 connection?.disconnect()
-                jobPollingInProgress = false
+                jobPollingInProgress.set(false)
             }
         }.start()
     }
 
-        override fun onAccessibilityEvent(event: AccessibilityEvent?) {
+    private fun reportUnstartedDeliveryJob(
+        jobId: String,
+        deviceToken: String,
+        reason: String
+    ) {
+        val numericJobId = jobId.toLongOrNull() ?: return
+
+        Thread {
+            var connection: HttpURLConnection? = null
+
+            try {
+                connection = openPost(
+                    "$BASE_URL/api/ussd/jobs/result",
+                    deviceToken
+                )
+
+                val payload = JSONObject().apply {
+                    put("job_id", numericJobId)
+                    put("status", "failed")
+                    put("safaricom_response", reason.take(2000))
+                }
+
+                connection.outputStream.use {
+                    it.write(
+                        payload.toString().toByteArray(Charsets.UTF_8)
+                    )
+                }
+
+                val responseCode = connection.responseCode
+                val responseText = readConnectionResponse(connection)
+
+                Log.i(
+                    TAG,
+                    "Unstarted job $numericJobId report HTTP $responseCode: $responseText"
+                )
+            } catch (e: Exception) {
+                Log.e(
+                    TAG,
+                    "Could not report unstarted job $numericJobId",
+                    e
+                )
+            } finally {
+                connection?.disconnect()
+            }
+        }.start()
+    }
+
+    private fun scheduleDeliveryTimeout(jobId: String) {
+        Handler(Looper.getMainLooper()).postDelayed({
+            val database = LocalDeliveryDatabase(this)
+            val active = database.getActiveDelivery()
+
+            if (active?.getAsString("job_id") != jobId) {
+                return@postDelayed
+            }
+
+            if (database.hasDeliveryResultForJob(jobId)) {
+                return@postDelayed
+            }
+
+            val startedAt = active.getAsLong("started_at") ?: 0L
+            val elapsed = System.currentTimeMillis() - startedAt
+
+            if (elapsed >= DELIVERY_TIMEOUT) {
+                Log.w(
+                    TAG,
+                    "Delivery job $jobId timed out without a definitive Safaricom response"
+                )
+
+                reportDeliveryResult(
+                    active,
+                    "uncertain",
+                    "No definitive Safaricom response was detected within 60 seconds. The delivery was not automatically repeated."
+                )
+            }
+        }, DELIVERY_TIMEOUT)
+    }
+
+    override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event == null) return
 
-        val packageName = event.packageName?.toString() ?: return
+        if (!ussdSessionInProgress.get()) {
+            return
+        }
+
+        val packageName = event.packageName?.toString() ?: ""
         val className = event.className?.toString() ?: ""
 
-        val isPhoneScreen =
+        val isPhoneInterface =
             packageName.contains("phone", ignoreCase = true) ||
-            packageName.contains("telephony", ignoreCase = true)
-
-        if (!isPhoneScreen) return
+            packageName.contains("telephony", ignoreCase = true) ||
+            packageName.contains("systemui", ignoreCase = true)
 
         val eventText = event.text.joinToString(" ").lowercase()
 
-        val isLikelyUssd =
+        val containsUssdClue =
             eventText.contains("ussd") ||
             eventText.contains("safaricom") ||
+            eventText.contains("bundle") ||
+            eventText.contains("transferred") ||
+            eventText.contains("insufficient") ||
             className.contains("alertdialog", ignoreCase = true)
 
-        if (!isLikelyUssd) return
+        if (!isPhoneInterface && !containsUssdClue) {
+            return
+        }
 
-        getSharedPreferences("app_setup", MODE_PRIVATE)
-            .edit()
+        val menuText = readVisibleUssdMenu()
+
+        if (menuText.isBlank()) {
+            return
+        }
+
+        getSharedPreferences(
+            "app_setup",
+            MODE_PRIVATE
+        ).edit()
             .putBoolean("ussd_screen_detected", true)
             .putLong(
                 "ussd_screen_detected_at",
                 System.currentTimeMillis()
             )
-            .apply()
-
-        val menuText = readVisibleUssdMenu()
-        if (menuText.isBlank()) return
-
-        getSharedPreferences("app_setup", MODE_PRIVATE)
-            .edit()
             .putString("last_ussd_menu_text", menuText)
             .apply()
 
@@ -414,8 +562,6 @@ private var pendingSyncInProgress = false
             LocalDeliveryDatabase(this).getActiveDelivery()
 
         if (activeDelivery != null) {
-            Log.i(TAG, "USSD response linked to active bundle delivery")
-
             when {
                 isSuccessfulSafaricomResponse(menuText) -> {
                     reportDeliveryResult(
@@ -432,13 +578,20 @@ private var pendingSyncInProgress = false
                         menuText
                     )
                 }
+
+                else -> {
+                    Log.i(
+                        TAG,
+                        "Bundle USSD screen detected; awaiting a definitive response"
+                    )
+                }
             }
 
             return
         }
 
         val transferPreferences = getSharedPreferences(
-            "active_airtime_transfer",
+            ACTIVE_TRANSFER_PREFS,
             MODE_PRIVATE
         )
 
@@ -448,7 +601,6 @@ private var pendingSyncInProgress = false
         )
 
         if (transferId <= 0L) {
-            Log.w(TAG, "USSD screen detected without an active transaction")
             return
         }
 
@@ -457,7 +609,8 @@ private var pendingSyncInProgress = false
         when {
             lower.contains("failed") ||
             lower.contains("insufficient") ||
-            lower.contains("invalid") -> {
+            lower.contains("invalid") ||
+            lower.contains("not successful") -> {
                 reportAirtimeTransferResult(
                     transferId,
                     "failed",
@@ -478,75 +631,128 @@ private var pendingSyncInProgress = false
             else -> {
                 Log.i(
                     TAG,
-                    "Sambaza USSD screen detected; awaiting a definitive response"
+                    "Sambaza USSD response detected; awaiting a definitive result"
                 )
             }
         }
-        }
-
-    private fun readVisibleUssdMenu(): String {
+    }
+        private fun readVisibleUssdMenu(): String {
         val root = rootInActiveWindow ?: return ""
-
-        val rootPackage = root.packageName?.toString() ?: ""
-        if (
-            !rootPackage.contains("phone", ignoreCase = true) &&
-            !rootPackage.contains("telephony", ignoreCase = true)
-        ) {
-            return ""
-        }
 
         val result = StringBuilder()
 
-        fun collect(node: android.view.accessibility.AccessibilityNodeInfo?) {
+        fun collect(node: AccessibilityNodeInfo?) {
             if (
                 node == null ||
                 !node.isVisibleToUser ||
                 node.isPassword ||
-                node.isEditable ||
                 result.length >= 2000
-            ) return
+            ) {
+                return
+            }
 
             val text = node.text?.toString()?.trim()
+
             if (!text.isNullOrEmpty()) {
                 result.append(text).append('\n')
             }
 
-            val description = node.contentDescription?.toString()?.trim()
+            val description =
+                node.contentDescription?.toString()?.trim()
+
             if (!description.isNullOrEmpty()) {
                 result.append(description).append('\n')
             }
 
-            for (i in 0 until node.childCount) {
-                collect(node.getChild(i))
+            for (index in 0 until node.childCount) {
+                collect(node.getChild(index))
             }
         }
 
         collect(root)
-        return result.toString().take(2000)
+
+        return result.toString()
+            .replace(Regex("[ \\t]+"), " ")
+            .trim()
+            .take(2000)
     }
-        private fun reportAirtimeTransferResult(
+
+    private fun isSuccessfulSafaricomResponse(
+        responseText: String
+    ): Boolean {
+        val message = responseText.lowercase()
+            .replace(Regex("\\s+"), " ")
+            .trim()
+
+        return message.contains("you have successfully purchased") ||
+            (
+                message.contains("thank you for choosing safaricom") &&
+                message.contains("you have purchased") &&
+                message.contains("bundle")
+            )
+    }
+
+    private fun isFailedSafaricomResponse(
+        responseText: String
+    ): Boolean {
+        val message = responseText.lowercase()
+            .replace(Regex("\\s+"), " ")
+            .trim()
+
+        return message.contains("recommendation failed") ||
+            message.contains("insufficient balance") ||
+            message.contains("insufficient airtime") ||
+            message.contains("invalid recipient") ||
+            message.contains("invalid phone number") ||
+            message.contains("you are not eligible") ||
+            message.contains("unable to process your request") ||
+            message.contains("transaction failed")
+    }
+
+    private fun reportAirtimeTransferResult(
         transferId: Long,
         resultStatus: String,
         responseText: String
     ) {
-        val preferences = getSharedPreferences(
-            "active_airtime_transfer",
-            MODE_PRIVATE
-        )
-
-        if (preferences.getLong("transfer_id", 0L) != transferId) {
+        if (
+            transferId <= 0L ||
+            resultStatus !in listOf(
+                "awaiting_confirmation",
+                "failed",
+                "uncertain"
+            )
+        ) {
             return
         }
 
-        synchronized(this) {
-            if (preferences.getBoolean("report_in_progress", false)) {
+        val preferences = getSharedPreferences(
+            ACTIVE_TRANSFER_PREFS,
+            MODE_PRIVATE
+        )
+
+        if (
+            preferences.getLong("transfer_id", 0L) != transferId
+        ) {
+            return
+        }
+
+        synchronized(preferences) {
+            if (
+                preferences.getBoolean(
+                    "report_in_progress",
+                    false
+                )
+            ) {
                 return
             }
 
             preferences.edit()
                 .putBoolean("report_in_progress", true)
                 .putString("result_status", resultStatus)
-                .putString("response_text", responseText.take(2000))
+                .putString(
+                    "response_text",
+                    responseText.take(2000)
+                )
                 .apply()
         }
 
@@ -561,32 +767,19 @@ private var pendingSyncInProgress = false
 
                 if (deviceToken.isBlank()) {
                     throw IllegalStateException(
-                        "Airtime transfer device token is missing"
+                        "Airtime transfer gateway token is missing"
                     )
                 }
+
+                connection = openPost(
+                    "$BASE_URL/api/ussd/airtime-transfers/result",
+                    deviceToken
+                )
 
                 val payload = JSONObject().apply {
                     put("transferId", transferId)
                     put("status", resultStatus)
                 }
-
-                connection = URL(
-                    "https://mpesa-auto-bundles-backend.onrender.com/api/ussd/airtime-transfers/result"
-                ).openConnection() as HttpURLConnection
-
-                connection.requestMethod = "POST"
-                connection.connectTimeout = 15000
-                connection.readTimeout = 15000
-                connection.doOutput = true
-
-                connection.setRequestProperty(
-                    "X-Device-Token",
-                    deviceToken
-                )
-                connection.setRequestProperty(
-                    "Content-Type",
-                    "application/json"
-                )
 
                 connection.outputStream.use {
                     it.write(
@@ -594,13 +787,17 @@ private var pendingSyncInProgress = false
                     )
                 }
 
-                if (connection.responseCode == 200) {
+                val responseCode = connection.responseCode
+                val responseTextFromServer =
+                    readConnectionResponse(connection)
+
+                if (responseCode in 200..299) {
                     preferences.edit().clear().apply()
-                    ussdSessionInProgress = false
+                    ussdSessionInProgress.set(false)
 
                     Log.i(
                         TAG,
-                        "Sambaza result accepted by backend: $transferId"
+                        "Airtime transfer result accepted for $transferId: $responseTextFromServer"
                     )
                 } else {
                     preferences.edit()
@@ -609,51 +806,47 @@ private var pendingSyncInProgress = false
 
                     Log.e(
                         TAG,
-                        "Sambaza result rejected: HTTP ${connection.responseCode}"
+                        "Airtime transfer result rejected: HTTP $responseCode $responseTextFromServer"
                     )
                 }
-
             } catch (e: Exception) {
                 preferences.edit()
                     .putBoolean("report_in_progress", false)
                     .apply()
 
-                Log.e(TAG, "Sambaza result reporting failed", e)
-
+                Log.e(
+                    TAG,
+                    "Could not report airtime transfer result",
+                    e
+                )
             } finally {
                 connection?.disconnect()
             }
         }.start()
-        }
-        private fun isSuccessfulSafaricomResponse(responseText: String): Boolean {
-        val message = responseText.lowercase()
-            .replace(Regex("\\s+"), " ")
-            .trim()
-
-        return message.contains("you have successfully purchased") ||
-            (
-                message.contains("thank you for choosing safaricom") &&
-                message.contains("you have purchased") &&
-                message.contains("bundle")
-            )
-        }
-            private fun isFailedSafaricomResponse(responseText: String): Boolean {
-        val message = responseText.lowercase()
-            .replace(Regex("\\s+"), " ")
-            .trim()
-
-        return message.contains("recommendation failed") &&
-            message.contains("has already been recommended")
-            }
-                    private fun reportDeliveryResult(
-        activeDelivery: android.content.ContentValues,
+    }
+        private fun reportDeliveryResult(
+        activeDelivery: ContentValues,
         status: String,
         responseText: String
     ) {
-        val jobIdText = activeDelivery.getAsString("job_id") ?: return
+        val jobIdText = activeDelivery.getAsString("job_id")
+            ?: return
+
+        val localStatus = when (status.lowercase()) {
+            "success" -> "SUCCESS"
+            "failed" -> "FAILED"
+            "uncertain" -> "UNCERTAIN"
+            else -> {
+                Log.e(TAG, "Rejected invalid delivery result status: $status")
+                return
+            }
+        }
 
         synchronized(this) {
-            if (reportingJobId == jobIdText) return
+            if (reportingJobId == jobIdText) {
+                return
+            }
+
             reportingJobId = jobIdText
         }
 
@@ -662,14 +855,8 @@ private var pendingSyncInProgress = false
             var reportAccepted = false
 
             try {
-                val role = activeDelivery.getAsString("role") ?: "reseller"
-
-                val localStatus = when (status.lowercase()) {
-                    "success" -> "SUCCESS"
-                    "failed" -> "FAILED"
-                    "uncertain" -> "UNCERTAIN"
-                    else -> throw IllegalArgumentException("Invalid delivery status")
-                }
+                val role = activeDelivery.getAsString("role")
+                    ?: throw IllegalStateException("Delivery role is missing")
 
                 val database = LocalDeliveryDatabase(this)
 
@@ -685,106 +872,139 @@ private var pendingSyncInProgress = false
                     safaricomResponse = responseText.take(2000)
                 )
 
-                Log.i(TAG, "Delivery result saved locally for job $jobIdText")
-
                 val preferencesName = if (role == "admin") {
-                    "admin_agent_gateway"
+                    ADMIN_GATEWAY_PREFS
                 } else {
-                    "agent_gateway"
+                    RESELLER_GATEWAY_PREFS
                 }
 
-                val deviceToken = getSharedPreferences(
-                    preferencesName,
-                    MODE_PRIVATE
-                ).getString("device_token", "") ?: ""
-
-                val jobId = jobIdText.toLongOrNull()
-                    ?: throw IllegalArgumentException("Invalid delivery job ID")
+                val deviceToken = getGatewayDeviceToken(
+                    preferencesName
+                )
 
                 if (deviceToken.isBlank()) {
-                    throw IllegalStateException("Gateway device token is missing")
+                    throw IllegalStateException(
+                        "Gateway device token is missing"
+                    )
                 }
+
+                val jobId = jobIdText.toLongOrNull()
+                    ?: throw IllegalArgumentException(
+                        "Delivery job ID is invalid"
+                    )
+
+                val savedStatus = database
+                    .getDeliveryResultStatusForJob(jobIdText)
+                    ?.lowercase()
+                    ?: status.lowercase()
 
                 val payload = JSONObject().apply {
                     put("job_id", jobId)
+                    put("status", savedStatus)
                     put(
-    "status",
-    database.getDeliveryResultStatusForJob(jobIdText)?.lowercase() ?: status
-)
-                    put("safaricom_response", responseText.take(2000))
+                        "safaricom_response",
+                        responseText.take(2000)
+                    )
                 }
 
-                connection = URL(
-                    "https://mpesa-auto-bundles-backend.onrender.com/api/ussd/jobs/result"
-                ).openConnection() as HttpURLConnection
-
-                connection.requestMethod = "POST"
-                connection.connectTimeout = 20000
-                connection.readTimeout = 20000
-                connection.doOutput = true
-
-                connection.setRequestProperty("X-Device-Token", deviceToken)
-                connection.setRequestProperty("Content-Type", "application/json")
+                connection = openPost(
+                    "$BASE_URL/api/ussd/jobs/result",
+                    deviceToken
+                )
 
                 connection.outputStream.use {
-                    it.write(payload.toString().toByteArray(Charsets.UTF_8))
+                    it.write(
+                        payload.toString().toByteArray(Charsets.UTF_8)
+                    )
                 }
 
                 val responseCode = connection.responseCode
+                val serverResponse = readConnectionResponse(connection)
 
-                if (responseCode == 200) {
+                if (responseCode in 200..299) {
                     database.markAsSynced(localId)
 
-val currentActiveDelivery = database.getActiveDelivery()
-if (currentActiveDelivery?.getAsString("job_id") == jobIdText) {
-    database.clearActiveDelivery()
-}
+                    val currentActive = database.getActiveDelivery()
+
+                    if (
+                        currentActive?.getAsString("job_id") == jobIdText
+                    ) {
+                        database.clearActiveDelivery()
+                    }
+
+                    ussdSessionInProgress.set(false)
                     reportAccepted = true
-                                            ussdSessionInProgress = false
 
-                    Log.i(TAG, "Delivery result accepted by backend for job $jobId")
+                    Log.i(
+                        TAG,
+                        "Delivery result accepted for job $jobId: $serverResponse"
+                    )
                 } else {
-                    Log.e(TAG, "Delivery result report failed: HTTP $responseCode")
+                    Log.e(
+                        TAG,
+                        "Delivery result rejected for job $jobId: HTTP $responseCode $serverResponse"
+                    )
                 }
-
             } catch (e: Exception) {
-                Log.e(TAG, "Delivery result reporting failed", e)
+                Log.e(
+                    TAG,
+                    "Could not report delivery result for job $jobIdText",
+                    e
+                )
             } finally {
                 connection?.disconnect()
 
-                if (!reportAccepted) {
-                    synchronized(this@BundleAutomationAccessibilityService) {
-                        if (reportingJobId == jobIdText) {
-                            reportingJobId = null
-                        }
+                synchronized(this@BundleAutomationAccessibilityService) {
+                    if (reportingJobId == jobIdText) {
+                        reportingJobId = null
                     }
+                }
+
+                if (!reportAccepted) {
+                    Log.w(
+                        TAG,
+                        "Delivery result remains saved locally for retry: $jobIdText"
+                    )
                 }
             }
         }.start()
-                    }
-                        private fun recoverStaleActiveDelivery() {
+    }
+
+    private fun recoverStaleActiveDelivery() {
         val database = LocalDeliveryDatabase(this)
         val activeDelivery = database.getActiveDelivery() ?: return
 
-        val jobId = activeDelivery.getAsString("job_id") ?: return
-        val startedAt = activeDelivery.getAsLong("started_at") ?: return
-if (database.hasDeliveryResultForJob(jobId)) return
+        val jobId = activeDelivery.getAsString("job_id")
+            ?: return
+
+        val startedAt = activeDelivery.getAsLong("started_at")
+            ?: return
+
+        if (database.hasDeliveryResultForJob(jobId)) {
+            return
+        }
+
         val elapsed = System.currentTimeMillis() - startedAt
 
-        if (elapsed >= 60000) {
-            Log.w(TAG, "Recovering stale delivery job $jobId")
-
-            reportDeliveryResult(
-                activeDelivery,
-                "uncertain",
-                "Gateway recovery: no definitive Safaricom response within 60 seconds"
-            )
+        if (elapsed < DELIVERY_TIMEOUT) {
+            return
         }
-                        }
-                        private fun syncPendingDeliveryResults() {
-        synchronized(this) {
-            if (pendingSyncInProgress) return
-            pendingSyncInProgress = true
+
+        Log.w(
+            TAG,
+            "Recovering stale delivery job $jobId after timeout"
+        )
+
+        reportDeliveryResult(
+            activeDelivery,
+            "uncertain",
+            "Gateway recovery: no definitive Safaricom response was received within 60 seconds. The USSD request will not be repeated automatically."
+        )
+    }
+
+    private fun syncPendingDeliveryResults() {
+        if (!pendingSyncInProgress.compareAndSet(false, true)) {
+            return
         }
 
         Thread {
@@ -796,56 +1016,53 @@ if (database.hasDeliveryResultForJob(jobId)) return
                     var connection: HttpURLConnection? = null
 
                     try {
-                        val localId = record.getAsString("local_id") ?: continue
-
-                        if (!localId.startsWith("job-")) continue
-
-                        val jobId = localId.removePrefix("job-").toLongOrNull()
+                        val localId = record.getAsString("local_id")
                             ?: continue
 
-                        val role = record.getAsString("role") ?: continue
-
-                        val preferencesName = if (role == "admin") {
-                            "admin_agent_gateway"
-                        } else {
-                            "agent_gateway"
+                        if (!localId.startsWith("job-")) {
+                            continue
                         }
 
-                        val deviceToken = getSharedPreferences(
-                            preferencesName,
-                            MODE_PRIVATE
-                        ).getString("device_token", "") ?: ""
+                        val jobId = localId
+                            .removePrefix("job-")
+                            .toLongOrNull()
+                            ?: continue
 
-                        if (deviceToken.isBlank()) continue
+                        val role = record.getAsString("role")
+                            ?: continue
 
-                        val resultStatus = record.getAsString("result_status")?.lowercase()
-    ?: continue
+                        val preferencesName = if (role == "admin") {
+                            ADMIN_GATEWAY_PREFS
+                        } else {
+                            RESELLER_GATEWAY_PREFS
+                        }
 
-val payload = JSONObject().apply {
-    put("job_id", jobId)
-    put("status", resultStatus)
-    put(
-        "safaricom_response",
-        record.getAsString("safaricom_response") ?: ""
-    )
-}
-
-                        connection = URL(
-                            "https://mpesa-auto-bundles-backend.onrender.com/api/ussd/jobs/result"
-                        ).openConnection() as HttpURLConnection
-
-                        connection.requestMethod = "POST"
-                        connection.connectTimeout = 10000
-                        connection.readTimeout = 10000
-                        connection.doOutput = true
-
-                        connection.setRequestProperty(
-                            "X-Device-Token",
-                            deviceToken
+                        val deviceToken = getGatewayDeviceToken(
+                            preferencesName
                         )
-                        connection.setRequestProperty(
-                            "Content-Type",
-                            "application/json"
+
+                        if (deviceToken.isBlank()) {
+                            continue
+                        }
+
+                        val resultStatus = record
+                            .getAsString("result_status")
+                            ?.lowercase()
+                            ?: continue
+
+                        val responseText = record
+                            .getAsString("safaricom_response")
+                            ?: ""
+
+                        val payload = JSONObject().apply {
+                            put("job_id", jobId)
+                            put("status", resultStatus)
+                            put("safaricom_response", responseText)
+                        }
+
+                        connection = openPost(
+                            "$BASE_URL/api/ussd/jobs/result",
+                            deviceToken
                         )
 
                         connection.outputStream.use {
@@ -854,468 +1071,691 @@ val payload = JSONObject().apply {
                             )
                         }
 
-                                                                        if (connection.responseCode == 200) {
+                        val responseCode = connection.responseCode
+                        val serverResponse =
+                            readConnectionResponse(connection)
+
+                        if (responseCode in 200..299) {
                             database.markAsSynced(localId)
 
-                            val activeDelivery = database.getActiveDelivery()
+                            val active = database.getActiveDelivery()
 
-                            if (activeDelivery?.getAsString("job_id") == jobId.toString()) {
+                            if (
+                                active?.getAsString("job_id") ==
+                                jobId.toString()
+                            ) {
                                 database.clearActiveDelivery()
-                                ussdSessionInProgress = false
+                                ussdSessionInProgress.set(false)
                             }
 
                             Log.i(
                                 TAG,
                                 "Pending delivery result synced: $jobId"
                             )
+                        } else {
+                            Log.e(
+                                TAG,
+                                "Pending result $jobId not accepted: HTTP $responseCode $serverResponse"
+                            )
                         }
-
                     } catch (e: Exception) {
-                        Log.e(TAG, "Pending delivery sync failed", e)
+                        Log.e(
+                            TAG,
+                            "Pending delivery result sync failed",
+                            e
+                        )
                     } finally {
                         connection?.disconnect()
                     }
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "Could not load pending delivery results", e)
+                Log.e(
+                    TAG,
+                    "Could not load pending delivery results",
+                    e
+                )
             } finally {
-                synchronized(this@BundleAutomationAccessibilityService) {
-                    pendingSyncInProgress = false
-                }
+                pendingSyncInProgress.set(false)
             }
         }.start()
-                        }
-                        }
-    private fun claimAndStartAirtimeTransfer(
+    }
+        private fun claimAndStartAirtimeTransfer(
         preferencesName: String
     ) {
-        if (jobPollingInProgress || ussdSessionInProgress) return
-        jobPollingInProgress = true
+        if (
+            jobPollingInProgress.get() ||
+            ussdSessionInProgress.get()
+        ) {
+            return
+        }
+
+        if (!jobPollingInProgress.compareAndSet(false, true)) {
+            return
+        }
 
         Thread {
             var connection: HttpURLConnection? = null
             var transferId = 0L
 
             try {
-                if (
-                    LocalDeliveryDatabase(this)
-                        .getActiveDelivery() != null
-                ) return@Thread
+                val database = LocalDeliveryDatabase(this)
 
-                val deviceToken = getSharedPreferences(
-                    preferencesName,
+                if (database.getActiveDelivery() != null) {
+                    return@Thread
+                }
+
+                val transferPreferences = getSharedPreferences(
+                    ACTIVE_TRANSFER_PREFS,
                     MODE_PRIVATE
-                ).getString("device_token", "") ?: ""
-
-                if (deviceToken.isBlank()) return@Thread
-
-                connection = URL(
-                    "https://mpesa-auto-bundles-backend.onrender.com/api/ussd/airtime-transfers/claim"
-                ).openConnection() as HttpURLConnection
-
-                connection.requestMethod = "POST"
-                connection.connectTimeout = 15000
-                connection.readTimeout = 15000
-                connection.doOutput = true
-
-                connection.setRequestProperty(
-                    "X-Device-Token",
-                    deviceToken
                 )
-                connection.setRequestProperty(
-                    "Content-Type",
-                    "application/json"
+
+                if (
+                    transferPreferences.getLong("transfer_id", 0L) > 0L
+                ) {
+                    return@Thread
+                }
+
+                val deviceToken = getGatewayDeviceToken(
+                    preferencesName
+                )
+
+                if (deviceToken.isBlank()) {
+                    Log.e(TAG, "Reseller gateway token is missing")
+                    return@Thread
+                }
+
+                connection = openPost(
+                    "$BASE_URL/api/ussd/airtime-transfers/claim",
+                    deviceToken
                 )
 
                 connection.outputStream.use {
-                    it.write("{}".toByteArray(Charsets.UTF_8))
+                    it.write(
+                        "{}".toByteArray(Charsets.UTF_8)
+                    )
                 }
 
-                if (connection.responseCode != 200) {
+                val responseCode = connection.responseCode
+                val responseText = readConnectionResponse(connection)
+
+                if (responseCode !in 200..299) {
                     Log.e(
                         TAG,
-                        "Airtime transfer claim failed: HTTP ${connection.responseCode}"
+                        "Airtime transfer claim failed: HTTP $responseCode $responseText"
                     )
                     return@Thread
                 }
 
-                val response = connection.inputStream
-                    .bufferedReader()
-                    .use { it.readText() }
-
-                val transfer = JSONObject(response)
+                val transfer = JSONObject(responseText)
                     .optJSONObject("transfer")
                     ?: return@Thread
 
                 transferId = transfer.optLong("id", 0L)
-                val ussdCode = transfer.optString("ussd_code", "")
 
-                if (transferId <= 0L || ussdCode.isBlank()) {
-                    Log.e(TAG, "Invalid airtime transfer details")
-                    return@Thread
-                }
+                val ussdCode = transfer.optString(
+                    "ussd_code",
+                    ""
+                ).trim()
 
-                if (
-                                    val transferPreferences = getSharedPreferences(
-                    "active_airtime_transfer",
-                    MODE_PRIVATE
+                val destinationPhone = transfer.optString(
+                    "destination_phone",
+                    ""
+                ).trim()
+
+                val airtimeAmount = transfer.optDouble(
+                    "airtime_amount",
+                    transfer.optDouble("amount", 0.0)
                 )
 
-                transferPreferences.edit()
-                    .putLong("transfer_id", transferId)
-                    .putString("device_token", deviceToken)
-                    .putLong(
-                        "started_at",
-                        System.currentTimeMillis()
-                    )
-                    .putBoolean("report_in_progress", false)
-                    .apply()
-
                 if (
-                    checkSelfPermission(
-                        android.Manifest.permission.CALL_PHONE
-                    ) != android.content.pm.PackageManager.PERMISSION_GRANTED ||
-                    checkSelfPermission(
-                        android.Manifest.permission.READ_PHONE_STATE
-                    ) != android.content.pm.PackageManager.PERMISSION_GRANTED
+                    transferId <= 0L ||
+                    !isValidUssdCode(ussdCode) ||
+                    !isKenyanLocalPhone(destinationPhone) ||
+                    airtimeAmount <= 0.0
                 ) {
-                    reportAirtimeTransferResult(
-                        transferId,
-                        "failed",
-                        "Required phone permissions are missing; Sambaza was not started"
+                    Log.e(
+                        TAG,
+                        "Claimed airtime transfer has invalid details"
                     )
-                    return@Thread
-                }
 
-                val subscriptions =
-                    getSystemService(SubscriptionManager::class.java)
-
-                val gatewaySim = subscriptions
-                    .activeSubscriptionInfoList
-                    ?.firstOrNull { it.simSlotIndex == 0 }
-
-                if (gatewaySim == null) {
-                    reportAirtimeTransferResult(
-                        transferId,
-                        "failed",
-                        "Safaricom gateway SIM was not found in SIM 1; Sambaza was not started"
-                    )
-                    return@Thread
-                }
-
-                val telephonyManager =
-                    getSystemService(TelephonyManager::class.java)
-                        .createForSubscriptionId(
-                            gatewaySim.subscriptionId
-                        )
-
-                synchronized(this@BundleAutomationAccessibilityService) {
-                    if (ussdSessionInProgress) {
-                        Log.w(TAG, "Another USSD session is already active")
+                    if (transferId > 0L) {
+                        transferPreferences.edit()
+                            .putLong("transfer_id", transferId)
+                            .putString("device_token", deviceToken)
+                            .putLong(
+                                "started_at",
+                                System.currentTimeMillis()
+                            )
+                            .putBoolean("report_in_progress", false)
+                            .apply()
 
                         reportAirtimeTransferResult(
                             transferId,
                             "failed",
-                            "Another USSD session is active; Sambaza was not started"
-                        )
-                        return@Thread
-                    }
-
-                    ussdSessionInProgress = true
-                }
-                        transferPreferences.getLong(
-                            "transfer_id",
-                            0L
-                        ) == transferId
-                    ) {
-                        reportAirtimeTransferResult(
-                            transferId,
-                            "uncertain",
-                            "No definitive Sambaza USSD response received within 60 seconds"
+                            "Transfer details were invalid. Sambaza was not started."
                         )
                     }
+
+                    return@Thread
                 }
 
-                Handler(Looper.getMainLooper()).postDelayed(
-                    timeoutRunnable,
-                    60000
+                transferPreferences.edit()
+                    .putLong("transfer_id", transferId)
+                    .putString("device_token", deviceToken)
+                    .putString("destination_phone", destinationPhone)
+                    .putDouble("airtime_amount", airtimeAmount)
+                    .putString("ussd_code", ussdCode)
+                    .putLong(
+                        "started_at",
+                        System.currentTimeMillis()
+                    )
+                    .putString("result_status", "")
+                    .putString("response_text", "")
+                    .putBoolean("report_in_progress", false)
+                    .apply()
+
+                Log.i(
+                    TAG,
+                    "Saved airtime transfer $transferId before USSD launch"
                 )
 
-                try {
-                    telephonyManager.sendUssdRequest(
-                        ussdCode,
-                        object : TelephonyManager.UssdResponseCallback() {
-
-                            override fun onReceiveUssdResponse(
-                                telephonyManager: TelephonyManager,
-                                request: String,
-                                response: CharSequence
-                            ) {
-                                val message = response.toString()
-                                val lower = message.lowercase()
-
-                                Log.i(
-                                    TAG,
-                                    "Sambaza USSD response: $message"
-                                )
-
-                                when {
-                                    lower.contains("failed") ||
-                                    lower.contains("insufficient") ||
-                                    lower.contains("invalid") -> {
-                                        reportAirtimeTransferResult(
-                                            transferId,
-                                            "failed",
-                                            message
-                                        )
-                                    }
-
-                                    lower.contains("transferred") ||
-                                    lower.contains("successfully sent") ||
-                                    lower.contains("successfully transferred") ||
-                                    lower.contains("successful") -> {
-                                        reportAirtimeTransferResult(
-                                            transferId,
-                                            "awaiting_confirmation",
-                                            message
-                                        )
-                                    }
-
-                                    else -> {
-                                        reportAirtimeTransferResult(
-                                            transferId,
-                                            "uncertain",
-                                            message
-                                        )
-                                    }
-                                }
-                            }
-
-                            override fun onReceiveUssdResponseFailed(
-                                telephonyManager: TelephonyManager,
-                                request: String,
-                                failureCode: Int
-                            ) {
-                                Log.e(
-                                    TAG,
-                                    "Sambaza Android USSD API failed: $failureCode"
-                                )
-
-                                val fallbackStarted =
-                                    launchAccessibilityFallback(ussdCode)
-
-                                if (!fallbackStarted) {
-                                    reportAirtimeTransferResult(
-                                        transferId,
-                                        "uncertain",
-                                        "Android USSD API failed and Accessibility fallback could not start"
-                                    )
-                                } else {
-                                    Log.i(
-                                        TAG,
-                                        "Sambaza continuing through Accessibility fallback"
-                                    )
-                                }
-                            }
-                        },
-                        Handler(Looper.getMainLooper())
-                    )
-
-                    Log.i(
-                        TAG,
-                        "Sambaza request started using Android USSD API on SIM 1"
-                    )
-
-                } catch (e: Exception) {
-                    Log.e(TAG, "Sambaza USSD request failed", e)
-
+                if (!ussdSessionInProgress.compareAndSet(false, true)) {
                     reportAirtimeTransferResult(
                         transferId,
-                        "uncertain",
-                        "Sambaza USSD request threw an exception: ${e.message}"
+                        "failed",
+                        "Another USSD session is already active. Sambaza was not started."
                     )
+                    return@Thread
                 }
 
+                val launchResult = launchUssdCall(ussdCode)
+
+                when (launchResult) {
+                    UssdLaunchResult.NOT_SENT -> {
+                        ussdSessionInProgress.set(false)
+
+                        reportAirtimeTransferResult(
+                            transferId,
+                            "failed",
+                            "The USSD request was not submitted. Sambaza was not started."
+                        )
+                    }
+
+                    UssdLaunchResult.SENT -> {
+                        Log.i(
+                            TAG,
+                            "Airtime transfer $transferId submitted through Android USSD API"
+                        )
+                    }
+
+                    UssdLaunchResult.UNCERTAIN -> {
+                        Log.w(
+                            TAG,
+                            "Airtime transfer $transferId has an uncertain USSD launch result"
+                        )
+                    }
+                }
+
+                if (launchResult != UssdLaunchResult.NOT_SENT) {
+                    Handler(Looper.getMainLooper()).postDelayed({
+                        val currentPreferences = getSharedPreferences(
+                            ACTIVE_TRANSFER_PREFS,
+                            MODE_PRIVATE
+                        )
+
+                        if (
+                            currentPreferences.getLong(
+                                "transfer_id",
+                                0L
+                            ) != transferId
+                        ) {
+                            return@postDelayed
+                        }
+
+                        val savedStatus = currentPreferences.getString(
+                            "result_status",
+                            ""
+                        ) ?: ""
+
+                        val startedAt = currentPreferences.getLong(
+                            "started_at",
+                            0L
+                        )
+
+                        if (
+                            savedStatus.isBlank() &&
+                            startedAt > 0L &&
+                            System.currentTimeMillis() - startedAt >=
+                            DELIVERY_TIMEOUT
+                        ) {
+                            reportAirtimeTransferResult(
+                                transferId,
+                                "uncertain",
+                                "No definitive Sambaza response was received within 60 seconds. The request will not be repeated automatically."
+                            )
+                        }
+                    }, DELIVERY_TIMEOUT)
+                }
             } catch (e: Exception) {
-                Log.e(TAG, "Could not start Sambaza transfer", e)
+                Log.e(
+                    TAG,
+                    "Could not claim or start airtime transfer",
+                    e
+                )
 
                 if (transferId > 0L) {
                     reportAirtimeTransferResult(
                         transferId,
                         "uncertain",
-                        "Could not start Sambaza transfer: ${e.message}"
+                        "An error occurred while starting the Sambaza transfer: ${e.message}"
                     )
                 }
-
             } finally {
                 connection?.disconnect()
-                jobPollingInProgress = false
+                jobPollingInProgress.set(false)
             }
         }.start()
     }
 
-private fun launchUssdCall(ussdCode: String): Boolean {
-    val code = ussdCode.trim()
+    private fun recoverPendingAirtimeTransferResult() {
+        val preferences = getSharedPreferences(
+            ACTIVE_TRANSFER_PREFS,
+            MODE_PRIVATE
+        )
 
-    if (
-        !code.startsWith("*") ||
-        !code.endsWith("#") ||
-        code.any {
-            !it.isDigit() && it != '*' && it != '#'
+        val transferId = preferences.getLong(
+            "transfer_id",
+            0L
+        )
+
+        if (transferId <= 0L) {
+            return
         }
-    ) {
-        Log.e(TAG, "Invalid USSD code")
-        return false
+
+        ussdSessionInProgress.set(true)
+
+        val startedAt = preferences.getLong(
+            "started_at",
+            0L
+        )
+
+        val savedStatus = preferences.getString(
+            "result_status",
+            ""
+        ) ?: ""
+
+        val savedResponse = preferences.getString(
+            "response_text",
+            ""
+        ) ?: ""
+
+        if (savedStatus.isNotBlank()) {
+            reportAirtimeTransferResult(
+                transferId,
+                savedStatus,
+                savedResponse.ifBlank {
+                    "Retrying saved Sambaza result after service recovery"
+                }
+            )
+            return
+        }
+
+        if (
+            startedAt > 0L &&
+            System.currentTimeMillis() - startedAt >= DELIVERY_TIMEOUT
+        ) {
+            reportAirtimeTransferResult(
+                transferId,
+                "uncertain",
+                "Sambaza recovery timeout: no definitive response was saved. The USSD request will not be repeated."
+            )
+        }
+    }
+        private enum class UssdLaunchResult {
+        NOT_SENT,
+        SENT,
+        UNCERTAIN
     }
 
-    if (
-        checkSelfPermission(android.Manifest.permission.CALL_PHONE) !=
-        android.content.pm.PackageManager.PERMISSION_GRANTED
-    ) {
-        Log.e(TAG, "CALL_PHONE permission not granted")
-        return false
+    private fun launchUssdCall(
+        ussdCode: String
+    ): UssdLaunchResult {
+        val code = ussdCode.trim()
+
+        if (!isValidUssdCode(code)) {
+            Log.e(TAG, "Rejected invalid USSD code")
+            return UssdLaunchResult.NOT_SENT
+        }
+
+        if (
+            checkSelfPermission(Manifest.permission.CALL_PHONE) !=
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            Log.e(TAG, "CALL_PHONE permission is missing")
+            return UssdLaunchResult.NOT_SENT
+        }
+
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+            Log.w(
+                TAG,
+                "Android USSD API is unavailable on this Android version; using Accessibility fallback"
+            )
+
+            return if (launchAccessibilityFallback(code)) {
+                UssdLaunchResult.SENT
+            } else {
+                UssdLaunchResult.NOT_SENT
+            }
+        }
+
+        if (
+            checkSelfPermission(Manifest.permission.READ_PHONE_STATE) !=
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            Log.e(TAG, "READ_PHONE_STATE permission is missing")
+            return UssdLaunchResult.NOT_SENT
+        }
+
+        val telephonyManager: TelephonyManager
+
+        try {
+            val subscriptionManager =
+                getSystemService(SubscriptionManager::class.java)
+
+            val gatewaySim = subscriptionManager
+                .activeSubscriptionInfoList
+                ?.firstOrNull { it.simSlotIndex == 0 }
+
+            if (gatewaySim == null) {
+                Log.e(TAG, "Safaricom gateway SIM was not found in SIM 1")
+                return UssdLaunchResult.NOT_SENT
+            }
+
+            telephonyManager =
+                getSystemService(TelephonyManager::class.java)
+                    .createForSubscriptionId(
+                        gatewaySim.subscriptionId
+                    )
+        } catch (e: Exception) {
+            Log.e(
+                TAG,
+                "Could not prepare the SIM 1 USSD connection",
+                e
+            )
+            return UssdLaunchResult.NOT_SENT
+        }
+
+        return try {
+            telephonyManager.sendUssdRequest(
+                code,
+                object : TelephonyManager.UssdResponseCallback() {
+
+                    override fun onReceiveUssdResponse(
+                        telephonyManager: TelephonyManager,
+                        request: String,
+                        response: CharSequence
+                    ) {
+                        val message = response.toString()
+
+                        Log.i(
+                            TAG,
+                            "Android USSD API response: $message"
+                        )
+
+                        handleUssdApiResponse(message)
+                    }
+
+                    override fun onReceiveUssdResponseFailed(
+                        telephonyManager: TelephonyManager,
+                        request: String,
+                        failureCode: Int
+                    ) {
+                        val message =
+                            "Android USSD API returned failure code $failureCode after the request was submitted. No second USSD request was started."
+
+                        Log.e(TAG, message)
+
+                        handleUssdApiUncertainResult(message)
+                    }
+                },
+                Handler(Looper.getMainLooper())
+            )
+
+            Log.i(
+                TAG,
+                "USSD request submitted through Android API using SIM 1"
+            )
+
+            UssdLaunchResult.SENT
+
+        } catch (e: Exception) {
+            Log.e(
+                TAG,
+                "USSD API threw an exception during submission; outcome is treated as uncertain",
+                e
+            )
+
+            handleUssdApiUncertainResult(
+                "Android USSD API threw an exception during submission: ${e.message}. No Accessibility retry was started."
+            )
+
+            UssdLaunchResult.UNCERTAIN
+        }
     }
 
-    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
-        Log.w(TAG, "Android USSD API unavailable; using Accessibility fallback")
-        return launchAccessibilityFallback(code)
+    private fun handleUssdApiResponse(message: String) {
+        val activeDelivery =
+            LocalDeliveryDatabase(this).getActiveDelivery()
+
+        if (activeDelivery != null) {
+            when {
+                isSuccessfulSafaricomResponse(message) -> {
+                    reportDeliveryResult(
+                        activeDelivery,
+                        "success",
+                        message
+                    )
+                }
+
+                isFailedSafaricomResponse(message) -> {
+                    reportDeliveryResult(
+                        activeDelivery,
+                        "failed",
+                        message
+                    )
+                }
+
+                else -> {
+                    Log.i(
+                        TAG,
+                        "Bundle USSD response is not yet definitive; waiting for further evidence"
+                    )
+                }
+            }
+
+            return
+        }
+
+        val preferences = getSharedPreferences(
+            ACTIVE_TRANSFER_PREFS,
+            MODE_PRIVATE
+        )
+
+        val transferId = preferences.getLong(
+            "transfer_id",
+            0L
+        )
+
+        if (transferId <= 0L) {
+            Log.w(
+                TAG,
+                "Received a USSD response without an active delivery or airtime transfer"
+            )
+            return
+        }
+
+        val lower = message.lowercase()
+
+        when {
+            isFailedSafaricomResponse(message) -> {
+                reportAirtimeTransferResult(
+                    transferId,
+                    "failed",
+                    message
+                )
+            }
+
+            lower.contains("transferred") ||
+            lower.contains("successfully sent") ||
+            lower.contains("successfully transferred") ||
+            lower.contains("successfully shared") ||
+            lower.contains("sambaza successful") -> {
+                reportAirtimeTransferResult(
+                    transferId,
+                    "awaiting_confirmation",
+                    message
+                )
+            }
+
+            else -> {
+                Log.i(
+                    TAG,
+                    "Airtime USSD response is not definitive; waiting for confirmation"
+                )
+            }
+        }
     }
 
-    if (
-        checkSelfPermission(android.Manifest.permission.READ_PHONE_STATE) !=
-        android.content.pm.PackageManager.PERMISSION_GRANTED
-    ) {
-        Log.e(TAG, "READ_PHONE_STATE permission required to select SIM 1")
-        return false
+    private fun handleUssdApiUncertainResult(message: String) {
+        val activeDelivery =
+            LocalDeliveryDatabase(this).getActiveDelivery()
+
+        if (activeDelivery != null) {
+            reportDeliveryResult(
+                activeDelivery,
+                "uncertain",
+                message
+            )
+            return
+        }
+
+        val preferences = getSharedPreferences(
+            ACTIVE_TRANSFER_PREFS,
+            MODE_PRIVATE
+        )
+
+        val transferId = preferences.getLong(
+            "transfer_id",
+            0L
+        )
+
+        if (transferId > 0L) {
+            reportAirtimeTransferResult(
+                transferId,
+                "uncertain",
+                message
+            )
+        } else {
+            Log.w(
+                TAG,
+                "USSD failure received without a saved active transaction"
+            )
+        }
     }
 
-    return try {
-        val subscriptionManager =
-            getSystemService(SubscriptionManager::class.java)
+    private fun launchAccessibilityFallback(
+        ussdCode: String
+    ): Boolean {
+        val code = ussdCode.trim()
 
-        val gatewaySim = subscriptionManager
-            .activeSubscriptionInfoList
-            ?.firstOrNull { it.simSlotIndex == 0 }
-
-        if (gatewaySim == null) {
-            Log.e(TAG, "Safaricom gateway SIM not found in SIM 1")
+        if (!isValidUssdCode(code)) {
+            Log.e(
+                TAG,
+                "Accessibility fallback rejected invalid USSD code"
+            )
             return false
         }
 
-        val baseTelephonyManager =
-            getSystemService(TelephonyManager::class.java)
-
-        val telephonyManager =
-            baseTelephonyManager.createForSubscriptionId(
-                gatewaySim.subscriptionId
+        if (
+            checkSelfPermission(Manifest.permission.CALL_PHONE) !=
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            Log.e(
+                TAG,
+                "Accessibility fallback cannot start without CALL_PHONE permission"
             )
-
-        telephonyManager.sendUssdRequest(
-            code,
-            object : TelephonyManager.UssdResponseCallback() {
-
-                override fun onReceiveUssdResponse(
-                    telephonyManager: TelephonyManager,
-                    request: String,
-                    response: CharSequence
-                ) {
-                    val message = response.toString()
-                    Log.i(TAG, "Android USSD API response: $message")
-
-                    val activeDelivery =
-                        LocalDeliveryDatabase(this@BundleAutomationAccessibilityService)
-                            .getActiveDelivery()
-
-                    if (activeDelivery != null) {
-                        when {
-                            isSuccessfulSafaricomResponse(message) -> {
-                                reportDeliveryResult(
-                                    activeDelivery,
-                                    "success",
-                                    message
-                                )
-                            }
-
-                            isFailedSafaricomResponse(message) -> {
-                                reportDeliveryResult(
-                                    activeDelivery,
-                                    "failed",
-                                    message
-                                )
-                            }
-
-                            else -> {
-                                Log.w(
-                                    TAG,
-                                    "USSD response needs review; not retrying automatically"
-                                )
-                                reportDeliveryResult(
-                                    activeDelivery,
-                                    "uncertain",
-                                    message
-                                )
-                            }
-                        }
-                    }
-                }
-
-                override fun onReceiveUssdResponseFailed(
-                    telephonyManager: TelephonyManager,
-                    request: String,
-                    failureCode: Int
-                ) {
-                    Log.e(
-                        TAG,
-                        "Android USSD API failed: $failureCode. Starting Accessibility fallback."
-                    )
-
-                    launchAccessibilityFallback(code)
-                }
-            },
-            Handler(Looper.getMainLooper())
-        )
-
-        Log.i(TAG, "USSD request sent using Android API on SIM 1")
-        true
-
-    } catch (e: Exception) {
-        Log.e(TAG, "Android USSD API could not start", e)
-        launchAccessibilityFallback(code)
-    }
-}
-
-private fun launchAccessibilityFallback(ussdCode: String): Boolean {
-    return try {
-        val intent = Intent(Intent.ACTION_CALL).apply {
-            data = Uri.parse("tel:${Uri.encode(ussdCode)}")
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            return false
         }
 
-        startActivity(intent)
-        Log.i(TAG, "Accessibility USSD fallback launched")
-        true
+        return try {
+            val intent = Intent(Intent.ACTION_CALL).apply {
+                data = Uri.parse(
+                    "tel:${Uri.encode(code)}"
+                )
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
 
-    } catch (e: Exception) {
-        Log.e(TAG, "Accessibility fallback could not launch", e)
-        false
+            startActivity(intent)
+
+            Log.i(
+                TAG,
+                "Accessibility USSD fallback launched"
+            )
+
+            true
+        } catch (e: Exception) {
+            Log.e(
+                TAG,
+                "Accessibility USSD fallback could not launch",
+                e
+            )
+            false
+        }
     }
-}
-
-    override fun onInterrupt() {
+        override fun onInterrupt() {
         heartbeatHandler.removeCallbacks(heartbeatRunnable)
         jobPollingHandler.removeCallbacks(jobPollingRunnable)
-        Log.w(TAG, "Bundle automation service interrupted")
+
+        Log.w(
+            TAG,
+            "Bundle automation service interrupted"
+        )
     }
 
     override fun onDestroy() {
         heartbeatHandler.removeCallbacks(heartbeatRunnable)
         jobPollingHandler.removeCallbacks(jobPollingRunnable)
+
+        Log.i(
+            TAG,
+            "Bundle automation service destroyed"
+        )
+
         super.onDestroy()
     }
 
     companion object {
         private const val TAG = "MAB_Automation"
-        private const val HEARTBEAT_INTERVAL = 5 * 60 * 1000L
-                private const val JOB_POLL_INTERVAL = 15 * 1000L
+
+        private const val BASE_URL =
+            "https://mpesa-auto-bundles-backend.onrender.com"
+
+        private const val ADMIN_GATEWAY_PREFS =
+            "admin_agent_gateway"
+
+        private const val RESELLER_GATEWAY_PREFS =
+            "agent_gateway"
+
+        private const val ACTIVE_TRANSFER_PREFS =
+            "active_airtime_transfer"
+
+        private const val HEARTBEAT_INTERVAL =
+            5 * 60 * 1000L
+
+        private const val JOB_POLL_INTERVAL =
+            15 * 1000L
+
+        private const val DELIVERY_TIMEOUT =
+            60 * 1000L
     }
 }
