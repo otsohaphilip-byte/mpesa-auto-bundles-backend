@@ -1171,7 +1171,10 @@ async function installUssdDevices(
                completed_at = NOW(),
                updated_at = NOW()
            WHERE id = $3
-             AND status IN ('claimed', 'running')
+                          AND (
+               status IN ('claimed', 'running')
+               OR (status = 'uncertain' AND $1 IN ('success', 'failed'))
+             )
              AND gateway_role = $4
              AND (
                ($4 = 'admin' AND admin_phone = $5::text)
