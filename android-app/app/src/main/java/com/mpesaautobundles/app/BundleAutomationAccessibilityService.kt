@@ -53,6 +53,7 @@ class BundleAutomationAccessibilityService : AccessibilityService() {
                 recoverStaleActiveDelivery()
                 syncPendingDeliveryResults()
                 recoverPendingAirtimeTransferResult()
+                syncPendingAirtimeTransferSms()
 
                 val adminToken = getSharedPreferences(
                     ADMIN_GATEWAY_PREFS,
