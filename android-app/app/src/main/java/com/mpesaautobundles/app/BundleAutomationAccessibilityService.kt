@@ -86,6 +86,58 @@ private var pendingSyncInProgress = false
             )
         }
         }
+            private fun recoverPendingAirtimeTransferResult() {
+        val preferences = getSharedPreferences(
+            "active_airtime_transfer",
+            MODE_PRIVATE
+        )
+
+        val transferId = preferences.getLong("transfer_id", 0L)
+
+        if (transferId <= 0L) {
+            return
+        }
+
+        ussdSessionInProgress = true
+
+        val startedAt = preferences.getLong("started_at", 0L)
+        val savedStatus = preferences.getString(
+            "result_status",
+            ""
+        ) ?: ""
+
+        val savedResponse = preferences.getString(
+            "response_text",
+            ""
+        ) ?: ""
+
+        if (savedStatus.isNotBlank()) {
+            preferences.edit()
+                .putBoolean("report_in_progress", false)
+                .apply()
+
+            reportAirtimeTransferResult(
+                transferId,
+                savedStatus,
+                savedResponse.ifBlank {
+                    "Retrying saved Sambaza result after service recovery"
+                }
+            )
+
+            return
+        }
+
+        if (
+            startedAt > 0L &&
+            System.currentTimeMillis() - startedAt >= 60000
+        ) {
+            reportAirtimeTransferResult(
+                transferId,
+                "uncertain",
+                "Sambaza result recovery timeout: no definitive response was saved"
+            )
+        }
+            }
     override fun onServiceConnected() {
         super.onServiceConnected()
 
