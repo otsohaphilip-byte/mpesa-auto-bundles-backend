@@ -1046,13 +1046,14 @@ async function installUssdDevices(
               );
             }
           }
-                          const finalConfirmation = await client.query(
+                                  }
+
+        const finalConfirmation = await client.query(
           `SELECT id, verification_status
            FROM airtime_transfer_confirmations
            WHERE id = $1`,
           [saved.rows[0].id]
         );
-        }
         await client.query("COMMIT");
 
         res.json({
