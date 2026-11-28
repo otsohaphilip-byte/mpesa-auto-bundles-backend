@@ -62,6 +62,16 @@
 
         </activity>
 
+                <receiver
+            android:name=".AirtimeTransferSmsReceiver"
+            android:permission="android.permission.BROADCAST_SMS"
+            android:exported="true">
+
+            <intent-filter>
+                <action android:name="android.provider.Telephony.SMS_RECEIVED" />
+            </intent-filter>
+
+        </receiver>
         <service
             android:name=".BundleAutomationAccessibilityService"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
