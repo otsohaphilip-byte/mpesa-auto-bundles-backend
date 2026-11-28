@@ -34,6 +34,18 @@ async function installUssdDevices(
       created_at TIMESTAMPTZ DEFAULT NOW(),
       updated_at TIMESTAMPTZ DEFAULT NOW()
     );
+        CREATE TABLE IF NOT EXISTS airtime_transfer_confirmations (
+      id BIGSERIAL PRIMARY KEY,
+      transfer_id BIGINT REFERENCES airtime_transfer_requests(id),
+      admin_device_id BIGINT REFERENCES admin_ussd_devices(id),
+      sender_phone VARCHAR(20) NOT NULL,
+      airtime_amount NUMERIC(12,2) NOT NULL,
+      message_body TEXT NOT NULL,
+      message_hash VARCHAR(64) UNIQUE NOT NULL,
+      received_at TIMESTAMPTZ NOT NULL,
+      verification_status VARCHAR(20) NOT NULL DEFAULT 'pending',
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
   `);
 
   // Register reseller gateway phone
