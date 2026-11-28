@@ -105,7 +105,7 @@ class LocalDeliveryDatabase(context: Context) :
 
         return localId
     }
-        fun saveDeliveryResultForJob(
+            fun saveDeliveryResultForJob(
         jobId: String,
         role: String,
         ownerId: String,
@@ -119,30 +119,65 @@ class LocalDeliveryDatabase(context: Context) :
         require(status in listOf("SUCCESS", "FAILED", "UNCERTAIN"))
 
         val localId = "job-$jobId"
+        val db = writableDatabase
 
-        val values = ContentValues().apply {
-            put("local_id", localId)
-            put("role", role)
-            put("owner_id", ownerId)
-            put("destination_phone", phone)
-            put("offer_id", offerId)
-            put("offer_name", offerName)
-            put("selling_price", sellingPrice)
-            put("result_status", status)
-            put("safaricom_response", safaricomResponse)
-            put("created_at", System.currentTimeMillis())
-            put("synced", 0)
+        db.beginTransaction()
+
+        try {
+            val existingStatus = db.rawQuery(
+                "SELECT result_status FROM deliveries WHERE local_id = ? LIMIT 1",
+                arrayOf(localId)
+            ).use { cursor ->
+                if (cursor.moveToFirst()) {
+                    cursor.getString(0)
+                } else {
+                    null
+                }
+            }
+
+            if (existingStatus == null) {
+                val values = ContentValues().apply {
+                    put("local_id", localId)
+                    put("role", role)
+                    put("owner_id", ownerId)
+                    put("destination_phone", phone)
+                    put("offer_id", offerId)
+                    put("offer_name", offerName)
+                    put("selling_price", sellingPrice)
+                    put("result_status", status)
+                    put("safaricom_response", safaricomResponse)
+                    put("created_at", System.currentTimeMillis())
+                    put("synced", 0)
+                }
+
+                db.insertOrThrow("deliveries", null, values)
+
+            } else if (
+                existingStatus == "UNCERTAIN" &&
+                status in listOf("SUCCESS", "FAILED")
+            ) {
+                val values = ContentValues().apply {
+                    put("result_status", status)
+                    put("safaricom_response", safaricomResponse)
+                    put("synced", 0)
+                }
+
+                db.update(
+                    "deliveries",
+                    values,
+                    "local_id = ?",
+                    arrayOf(localId)
+                )
+            }
+
+            db.setTransactionSuccessful()
+
+        } finally {
+            db.endTransaction()
         }
-
-        writableDatabase.insertWithOnConflict(
-            "deliveries",
-            null,
-            values,
-            SQLiteDatabase.CONFLICT_IGNORE
-        )
 
         return localId
-        }
+            }
 
     fun getPendingDeliveries(): List<android.content.ContentValues> {
         val records = mutableListOf<android.content.ContentValues>()
