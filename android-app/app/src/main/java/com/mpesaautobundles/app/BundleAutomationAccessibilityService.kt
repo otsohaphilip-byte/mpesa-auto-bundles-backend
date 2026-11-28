@@ -845,6 +845,7 @@ class BundleAutomationAccessibilityService : AccessibilityService() {
         Thread {
             var connection: HttpURLConnection? = null
             var reportAccepted = false
+            var ownsReportingSlot = false
 
             try {
                 val role = activeDelivery.getAsString("role")
