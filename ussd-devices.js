@@ -947,6 +947,106 @@ async function installUssdDevices(
           });
         }
 
+                if (
+          transferId !== null &&
+          verificationStatus === "matched"
+        ) {
+          const transfer = await client.query(
+            `SELECT reseller_id, airtime_amount,
+                    tokens_to_credit
+             FROM airtime_transfer_requests
+             WHERE id = $1
+               AND status IN (
+                 'started',
+                 'awaiting_confirmation',
+                 'uncertain'
+               )
+             FOR UPDATE`,
+            [transferId]
+          );
+
+          if (transfer.rows.length === 1) {
+            const item = transfer.rows[0];
+
+            const marked = await client.query(
+              `UPDATE airtime_transfer_requests
+               SET status = 'credited',
+                   confirmation_sms_hash = $2,
+                   confirmed_at = $3,
+                   updated_at = NOW()
+               WHERE id = $1
+                 AND status IN (
+                   'started',
+                   'awaiting_confirmation',
+                   'uncertain'
+                 )
+               RETURNING id`,
+              [
+                transferId,
+                messageHash,
+                receivedAt.toISOString()
+              ]
+            );
+
+            if (marked.rows.length === 1) {
+              await client.query(
+                `INSERT INTO token_wallets (
+                   reseller_id, balance
+                 )
+                 VALUES ($1, $2)
+                 ON CONFLICT (reseller_id)
+                 DO UPDATE SET
+                   balance = token_wallets.balance
+                     + EXCLUDED.balance`,
+                [
+                  item.reseller_id,
+                  item.tokens_to_credit
+                ]
+              );
+
+              await client.query(
+                `INSERT INTO token_transactions (
+                   reseller_id,
+                   transaction_type,
+                   amount,
+                   reference
+                 )
+                 VALUES ($1, $2, $3, $4)`,
+                [
+                  item.reseller_id,
+                  "airtime_purchase",
+                  item.tokens_to_credit,
+                  `airtime-transfer-${transferId}`
+                ]
+              );
+
+              await client.query(
+                `INSERT INTO airtime_ledger (
+                   owner_type,
+                   reseller_id,
+                   transaction_type,
+                   amount,
+                   reference
+                 )
+                 VALUES ($1, $2, $3, $4, $5)`,
+                [
+                  "admin",
+                  item.reseller_id,
+                  "reseller_airtime_received",
+                  item.airtime_amount,
+                  `airtime-transfer-${transferId}`
+                ]
+              );
+
+              await client.query(
+                `UPDATE airtime_transfer_confirmations
+                 SET verification_status = 'credited'
+                 WHERE id = $1`,
+                [saved.rows[0].id]
+              );
+            }
+          }
+        }
         await client.query("COMMIT");
 
         res.json({
