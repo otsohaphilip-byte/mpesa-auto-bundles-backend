@@ -346,6 +346,7 @@ class BundleAutomationAccessibilityService : AccessibilityService() {
                     jobRole == role &&
                     ownerId.isNotBlank() &&
                     isKenyanLocalPhone(destinationPhone) &&
+                                    offerId.isNotBlank() &&
                     offerName.isNotBlank() &&
                     amount >= 0.0 &&
                     isValidUssdCode(ussdCode)
