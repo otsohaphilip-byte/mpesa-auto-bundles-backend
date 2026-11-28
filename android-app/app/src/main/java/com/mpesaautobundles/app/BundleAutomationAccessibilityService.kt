@@ -139,6 +139,18 @@ private var pendingSyncInProgress = false
         }
             }
     override fun onServiceConnected() {
+                    val activeTransferId = getSharedPreferences(
+            "active_airtime_transfer",
+            MODE_PRIVATE
+        ).getLong("transfer_id", 0L)
+
+        if (activeTransferId > 0L) {
+            ussdSessionInProgress = true
+            Log.i(
+                TAG,
+                "Restored active Sambaza session: $activeTransferId"
+            )
+        }
         super.onServiceConnected()
 
         getSharedPreferences("app_setup", MODE_PRIVATE)
