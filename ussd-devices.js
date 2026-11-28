@@ -770,6 +770,209 @@ async function installUssdDevices(
       }
     }
   );
+    // Receive Sambaza confirmation SMS on the admin gateway
+  app.post(
+    "/api/admin/ussd/airtime-transfer-sms",
+    async (req, res) => {
+      const client = await pool.connect();
+
+      try {
+        const deviceToken = String(
+          req.headers["x-device-token"] || ""
+        );
+
+        if (!deviceToken) {
+          return res.status(401).json({
+            status: "ERROR",
+            message: "Gateway device token is required."
+          });
+        }
+
+        const tokenHash = crypto
+          .createHash("sha256")
+          .update(deviceToken)
+          .digest("hex");
+
+        const device = await client.query(
+          `SELECT id
+           FROM admin_ussd_devices
+           WHERE device_token_hash = $1`,
+          [tokenHash]
+        );
+
+        if (device.rows.length === 0) {
+          return res.status(401).json({
+            status: "ERROR",
+            message: "Invalid administrator gateway token."
+          });
+        }
+
+        const messageBody = String(
+          req.body.message_body || ""
+        ).trim().slice(0, 2000);
+
+        const receivedAt = new Date(
+          req.body.received_at
+        );
+
+        const match = messageBody.match(
+          /The subscriber\s+(\d{9,12})\s+transferred\s+(\d+(?:\.\d{1,2})?)\s+KSH\s+for you/i
+        );
+
+        if (
+          !match ||
+          !messageBody ||
+          Number.isNaN(receivedAt.getTime())
+        ) {
+          return res.status(400).json({
+            status: "ERROR",
+            message: "SMS format or received time is invalid."
+          });
+        }
+
+        let senderPhone = match[1];
+
+        if (senderPhone.startsWith("254")) {
+          senderPhone = "0" + senderPhone.substring(3);
+        } else if (
+          senderPhone.length === 9 &&
+          /^[71]/.test(senderPhone)
+        ) {
+          senderPhone = "0" + senderPhone;
+        }
+
+        if (!/^(07|01)\d{8}$/.test(senderPhone)) {
+          return res.status(400).json({
+            status: "ERROR",
+            message: "Sender phone number is invalid."
+          });
+        }
+
+        const airtimeAmount = Number(match[2]);
+
+        const messageHash = crypto
+          .createHash("sha256")
+          .update(
+            device.rows[0].id + "|" +
+            senderPhone + "|" +
+            messageBody + "|" +
+            receivedAt.toISOString()
+          )
+          .digest("hex");
+
+        await client.query("BEGIN");
+
+        const candidates = await client.query(
+          `SELECT transfer.id
+           FROM airtime_transfer_requests AS transfer
+           JOIN reseller_ussd_devices AS gateway
+             ON gateway.reseller_id = transfer.reseller_id
+           WHERE
+             CASE
+               WHEN LEFT(
+                 REGEXP_REPLACE(gateway.phone, '\\D', '', 'g'),
+                 3
+               ) = '254'
+               THEN '0' || SUBSTRING(
+                 REGEXP_REPLACE(gateway.phone, '\\D', '', 'g')
+                 FROM 4
+               )
+               ELSE REGEXP_REPLACE(
+                 gateway.phone, '\\D', '', 'g'
+               )
+             END = $1
+             AND transfer.airtime_amount = $2
+             AND transfer.status IN (
+               'started',
+               'awaiting_confirmation',
+               'uncertain'
+             )
+             AND transfer.created_at BETWEEN
+               $3::timestamptz - INTERVAL '15 minutes'
+               AND
+               $3::timestamptz + INTERVAL '2 minutes'
+           ORDER BY transfer.created_at DESC
+           LIMIT 2
+           FOR UPDATE OF transfer`,
+          [
+            senderPhone,
+            airtimeAmount,
+            receivedAt.toISOString()
+          ]
+        );
+
+        let transferId = null;
+        let verificationStatus = "unmatched";
+
+        if (candidates.rows.length === 1) {
+          transferId = candidates.rows[0].id;
+          verificationStatus = "matched";
+        } else if (candidates.rows.length > 1) {
+          verificationStatus = "ambiguous";
+        }
+
+        const saved = await client.query(
+          `INSERT INTO airtime_transfer_confirmations (
+             transfer_id,
+             admin_device_id,
+             sender_phone,
+             airtime_amount,
+             message_body,
+             message_hash,
+             received_at,
+             verification_status
+           )
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+           ON CONFLICT (message_hash) DO NOTHING
+           RETURNING id, verification_status`,
+          [
+            transferId,
+            device.rows[0].id,
+            senderPhone,
+            airtimeAmount,
+            messageBody,
+            messageHash,
+            receivedAt.toISOString(),
+            verificationStatus
+          ]
+        );
+
+        if (saved.rows.length === 0) {
+          await client.query("ROLLBACK");
+
+          return res.json({
+            status: "SUCCESS",
+            duplicate: true,
+            message: "This confirmation SMS was already received."
+          });
+        }
+
+        await client.query("COMMIT");
+
+        res.json({
+          status: "SUCCESS",
+          confirmation: saved.rows[0],
+          message: "Sambaza SMS recorded. Token credit is not yet applied."
+        });
+
+      } catch (error) {
+        await client.query("ROLLBACK");
+
+        console.error(
+          "Admin Sambaza SMS reception error:",
+          error
+        );
+
+        res.status(500).json({
+          status: "ERROR",
+          message: "Could not record Sambaza confirmation SMS."
+        });
+
+      } finally {
+        client.release();
+      }
+    }
+  );
   // Receive delivery result from a registered gateway
   app.post(
     "/api/ussd/jobs/result",
