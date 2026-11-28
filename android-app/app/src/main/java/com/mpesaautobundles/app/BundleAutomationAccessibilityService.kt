@@ -28,6 +28,7 @@ class BundleAutomationAccessibilityService : AccessibilityService() {
     private val jobPollingInProgress = AtomicBoolean(false)
     private val ussdSessionInProgress = AtomicBoolean(false)
     private val pendingSyncInProgress = AtomicBoolean(false)
+    private val pendingAirtimeSmsSyncInProgress = AtomicBoolean(false)
 
     @Volatile
     private var reportingJobId: String? = null
