@@ -5,9 +5,8 @@ import android.content.Context
 import android.content.Intent
 import android.provider.Telephony
 import android.util.Log
+import org.json.JSONArray
 import org.json.JSONObject
-import java.net.HttpURLConnection
-import java.net.URL
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -35,79 +34,80 @@ class AirtimeTransferSmsReceiver : BroadcastReceiver() {
             return
         }
 
-        val pendingResult = goAsync()
+        val receivedAt = SimpleDateFormat(
+            "yyyy-MM-dd'T'HH:mm:ss.SSSXXX",
+            Locale.US
+        ).format(Date(messages.first().timestampMillis))
 
-        Thread {
-            try {
-                val preferences = context.getSharedPreferences(
-                    "admin_agent_gateway",
-                    Context.MODE_PRIVATE
+        val preferences = context.getSharedPreferences(
+            "admin_agent_gateway",
+            Context.MODE_PRIVATE
+        )
+
+        synchronized(SMS_QUEUE_LOCK) {
+            val existing = try {
+                JSONArray(
+                    preferences.getString(
+                        PENDING_SMS_KEY,
+                        "[]"
+                    ) ?: "[]"
                 )
+            } catch (e: Exception) {
+                Log.e("MAB_SMS", "Could not read pending SMS queue", e)
+                JSONArray()
+            }
 
-                val deviceToken = preferences.getString(
-                    "device_token",
-                    ""
-                ) ?: ""
+            val alreadySaved = (0 until existing.length()).any { index ->
+                val item = existing.optJSONObject(index)
+                item?.optString("message_body") == body &&
+                    item.optString("received_at") == receivedAt
+            }
 
-                if (deviceToken.isBlank()) {
-                    Log.e("MAB_SMS", "Admin gateway token missing")
-                    return@Thread
-                }
+            if (alreadySaved) {
+                Log.i("MAB_SMS", "Confirmation SMS is already queued")
+                return
+            }
 
-                val receivedAt = SimpleDateFormat(
-                    "yyyy-MM-dd'T'HH:mm:ss.SSSXXX",
-                    Locale.US
-                ).format(Date(messages.first().timestampMillis))
+            val updated = JSONArray()
 
-                val payload = JSONObject().apply {
+            for (index in 0 until existing.length()) {
+                updated.put(existing.getJSONObject(index))
+            }
+
+            updated.put(
+                JSONObject().apply {
                     put("message_body", body)
                     put("received_at", receivedAt)
                 }
+            )
 
-                val connection = URL(
-                    "https://mpesa-auto-bundles-backend.onrender.com/api/admin/ussd/airtime-transfer-sms"
-                ).openConnection() as HttpURLConnection
+            if (updated.length() > MAX_PENDING_SMS) {
+                Log.e("MAB_SMS", "Pending SMS queue is full; SMS was not discarded")
+                return
+            }
 
-                try {
-                    connection.requestMethod = "POST"
-                    connection.connectTimeout = 20000
-                    connection.readTimeout = 20000
-                    connection.doOutput = true
+            val saved = preferences.edit()
+                .putString(PENDING_SMS_KEY, updated.toString())
+                .commit()
 
-                    connection.setRequestProperty(
-                        "X-Device-Token",
-                        deviceToken
-                    )
-
-                    connection.setRequestProperty(
-                        "Content-Type",
-                        "application/json"
-                    )
-
-                    connection.outputStream.use {
-                        it.write(
-                            payload.toString().toByteArray(Charsets.UTF_8)
-                        )
-                    }
-
-                    Log.i(
-                        "MAB_SMS",
-                        "Sambaza SMS upload HTTP ${connection.responseCode}"
-                    )
-
-                } finally {
-                    connection.disconnect()
-                }
-
-            } catch (e: Exception) {
+            if (saved) {
+                Log.i(
+                    "MAB_SMS",
+                    "Sambaza confirmation SMS saved locally for server delivery"
+                )
+            } else {
                 Log.e(
                     "MAB_SMS",
-                    "Could not upload Sambaza SMS",
-                    e
+                    "Could not persist Sambaza confirmation SMS"
                 )
-            } finally {
-                pendingResult.finish()
             }
-        }.start()
+        }
+    }
+
+    companion object {
+        const val PENDING_SMS_KEY = "pending_sambaza_sms"
+        const val MAX_PENDING_SMS = 100
+
+        private val SMS_QUEUE_LOCK = Any()
     }
 }
