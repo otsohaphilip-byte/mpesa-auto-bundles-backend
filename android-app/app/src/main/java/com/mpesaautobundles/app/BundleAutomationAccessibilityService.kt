@@ -38,10 +38,11 @@ private var pendingSyncInProgress = false
              @Volatile
     private var nextResellerQueueIsAirtime = false
 
-    private val jobPollingRunnable = object : Runnable {
+        private val jobPollingRunnable = object : Runnable {
         override fun run() {
             recoverStaleActiveDelivery()
             syncPendingDeliveryResults()
+            recoverPendingAirtimeTransferResult()
 
             val adminToken = getSharedPreferences(
                 "admin_agent_gateway",
@@ -84,7 +85,7 @@ private var pendingSyncInProgress = false
                 JOB_POLL_INTERVAL
             )
         }
-    }           
+        }
     override fun onServiceConnected() {
         super.onServiceConnected()
 
