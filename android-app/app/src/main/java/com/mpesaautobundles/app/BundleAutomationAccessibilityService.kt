@@ -668,6 +668,250 @@ val payload = JSONObject().apply {
         }.start()
                         }
                         }
+private fun claimAndStartAirtimeTransfer(
+    preferencesName: String
+) {
+    if (jobPollingInProgress || ussdSessionInProgress) return
+    jobPollingInProgress = true
+
+    Thread {
+        var connection: HttpURLConnection? = null
+        var sessionStarted = false
+
+        try {
+            if (
+                LocalDeliveryDatabase(this)
+                    .getActiveDelivery() != null
+            ) return@Thread
+
+            val deviceToken = getSharedPreferences(
+                preferencesName,
+                MODE_PRIVATE
+            ).getString("device_token", "") ?: ""
+
+            if (deviceToken.isBlank()) return@Thread
+
+            connection = URL(
+                "https://mpesa-auto-bundles-backend.onrender.com/api/ussd/airtime-transfers/claim"
+            ).openConnection() as HttpURLConnection
+
+            connection.requestMethod = "POST"
+            connection.connectTimeout = 15000
+            connection.readTimeout = 15000
+            connection.doOutput = true
+
+            connection.setRequestProperty(
+                "X-Device-Token",
+                deviceToken
+            )
+            connection.setRequestProperty(
+                "Content-Type",
+                "application/json"
+            )
+
+            connection.outputStream.use {
+                it.write("{}".toByteArray(Charsets.UTF_8))
+            }
+
+            if (connection.responseCode != 200) {
+                Log.e(
+                    TAG,
+                    "Airtime transfer claim failed: HTTP ${connection.responseCode}"
+                )
+                return@Thread
+            }
+
+            val response = connection.inputStream
+                .bufferedReader()
+                .use { it.readText() }
+
+            val transfer = JSONObject(response)
+                .optJSONObject("transfer")
+                ?: return@Thread
+
+            val transferId = transfer.optLong("id", 0L)
+            val ussdCode = transfer.optString("ussd_code", "")
+
+            if (transferId <= 0 || ussdCode.isBlank()) {
+                Log.e(TAG, "Invalid airtime transfer details")
+                return@Thread
+            }
+
+            if (
+                checkSelfPermission(
+                    android.Manifest.permission.CALL_PHONE
+                ) != android.content.pm.PackageManager.PERMISSION_GRANTED ||
+                checkSelfPermission(
+                    android.Manifest.permission.READ_PHONE_STATE
+                ) != android.content.pm.PackageManager.PERMISSION_GRANTED
+            ) {
+                Log.e(TAG, "Phone permissions missing for Sambaza")
+                return@Thread
+            }
+
+            val subscriptions =
+                getSystemService(SubscriptionManager::class.java)
+
+            val gatewaySim = subscriptions
+                .activeSubscriptionInfoList
+                ?.firstOrNull { it.simSlotIndex == 0 }
+                ?: return@Thread
+
+            val telephonyManager =
+                getSystemService(TelephonyManager::class.java)
+                    .createForSubscriptionId(
+                        gatewaySim.subscriptionId
+                    )
+
+            synchronized(this@BundleAutomationAccessibilityService) {
+                if (ussdSessionInProgress) {
+                    Log.w(TAG, "Another USSD session is already active")
+                    return@Thread
+                }
+
+                ussdSessionInProgress = true
+                sessionStarted = true
+            }
+
+            fun reportResult(resultStatus: String) {
+                Thread {
+                    var resultConnection: HttpURLConnection? = null
+
+                    try {
+                        resultConnection = URL(
+                            "https://mpesa-auto-bundles-backend.onrender.com/api/ussd/airtime-transfers/result"
+                        ).openConnection() as HttpURLConnection
+
+                        resultConnection.requestMethod = "POST"
+                        resultConnection.connectTimeout = 15000
+                        resultConnection.readTimeout = 15000
+                        resultConnection.doOutput = true
+
+                        resultConnection.setRequestProperty(
+                            "X-Device-Token",
+                            deviceToken
+                        )
+                        resultConnection.setRequestProperty(
+                            "Content-Type",
+                            "application/json"
+                        )
+
+                        val payload = JSONObject().apply {
+                            put("transferId", transferId)
+                            put("status", resultStatus)
+                        }
+
+                        resultConnection.outputStream.use {
+                            it.write(
+                                payload.toString()
+                                    .toByteArray(Charsets.UTF_8)
+                            )
+                        }
+
+                        val resultCode = resultConnection.responseCode
+
+                        Log.i(
+                            TAG,
+                            "Airtime transfer result HTTP $resultCode"
+                        )
+
+                        if (resultCode == 200) {
+                            ussdSessionInProgress = false
+                            Log.i(
+                                TAG,
+                                "Sambaza USSD session completed for transfer $transferId"
+                            )
+                        } else {
+                            Log.e(
+                                TAG,
+                                "Sambaza result was not accepted; USSD lock remains active"
+                            )
+                        }
+
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Could not report Sambaza result", e)
+                    } finally {
+                        resultConnection?.disconnect()
+                    }
+                }.start()
+            }
+
+            telephonyManager.sendUssdRequest(
+                ussdCode,
+                object : TelephonyManager.UssdResponseCallback() {
+
+                    override fun onReceiveUssdResponse(
+                        telephonyManager: TelephonyManager,
+                        request: String,
+                        response: CharSequence
+                    ) {
+                        val message = response.toString()
+                        val lower = message.lowercase()
+
+                        Log.i(TAG, "Sambaza USSD response: $message")
+
+                        when {
+                            lower.contains("failed") ||
+                            lower.contains("insufficient") ||
+                            lower.contains("invalid") -> {
+                                reportResult("failed")
+                            }
+
+                            lower.contains("transferred") ||
+                            lower.contains("successful") -> {
+                                reportResult("awaiting_confirmation")
+                            }
+
+                            else -> {
+                                reportResult("uncertain")
+                            }
+                        }
+                    }
+
+                    override fun onReceiveUssdResponseFailed(
+                        telephonyManager: TelephonyManager,
+                        request: String,
+                        failureCode: Int
+                    ) {
+                        Log.e(
+                            TAG,
+                            "Sambaza Android USSD API failed: $failureCode"
+                        )
+
+                        val fallbackStarted =
+                            launchAccessibilityFallback(ussdCode)
+
+                        if (!fallbackStarted) {
+                            reportResult("uncertain")
+                        } else {
+                            Log.i(
+                                TAG,
+                                "Sambaza continuing through Accessibility fallback"
+                            )
+                        }
+                    }
+                },
+                Handler(Looper.getMainLooper())
+            )
+
+            Log.i(
+                TAG,
+                "Sambaza request started using Android USSD API on SIM 1"
+            )
+
+        } catch (e: Exception) {
+            Log.e(TAG, "Could not start Sambaza transfer", e)
+
+            if (sessionStarted) {
+                ussdSessionInProgress = false
+            }
+
+        } finally {
+            connection?.disconnect()
+            jobPollingInProgress = false
+        }
+    }.start()
+}
                             private fun claimAndStartAirtimeTransfer(
         preferencesName: String
     ) {
@@ -768,108 +1012,7 @@ val payload = JSONObject().apply {
                         try {
                             resultConnection = URL(
                                 "https://mpesa-auto-bundles-backend.onrender.com/api/ussd/airtime-transfers/result"
-                            ).openConnection() as HttpURLConnection
 
-                            resultConnection.requestMethod = "POST"
-                            resultConnection.connectTimeout = 15000
-                            resultConnection.readTimeout = 15000
-                            resultConnection.doOutput = true
-
-                            resultConnection.setRequestProperty(
-                                "X-Device-Token",
-                                deviceToken
-                            )
-                            resultConnection.setRequestProperty(
-                                "Content-Type",
-                                "application/json"
-                            )
-
-                            val payload = JSONObject().apply {
-                                put("transferId", transferId)
-                                put("status", resultStatus)
-                            }
-
-                            resultConnection.outputStream.use {
-                                it.write(
-                                    payload.toString()
-                                        .toByteArray(Charsets.UTF_8)
-                                )
-                            }
-
-                            Log.i(
-                                TAG,
-                                "Airtime transfer result HTTP ${resultConnection.responseCode}"
-                            )
-
-                        } catch (e: Exception) {
-                            Log.e(TAG, "Could not report Sambaza result", e)
-                        } finally {
-                            resultConnection?.disconnect()
-                        }
-                    }.start()
-                }
-
-                telephonyManager.sendUssdRequest(
-                    ussdCode,
-                    object : TelephonyManager.UssdResponseCallback() {
-
-                        override fun onReceiveUssdResponse(
-                            telephonyManager: TelephonyManager,
-                            request: String,
-                            response: CharSequence
-                        ) {
-                            val message = response.toString()
-                            val lower = message.lowercase()
-
-                            Log.i(TAG, "Sambaza USSD response: $message")
-
-                            when {
-                                lower.contains("failed") ||
-                                lower.contains("insufficient") ||
-                                lower.contains("invalid") -> {
-                                    reportResult("failed")
-                                }
-
-                                lower.contains("transferred") ||
-                                lower.contains("successful") -> {
-                                    reportResult("awaiting_confirmation")
-                                }
-
-                                else -> {
-                                    reportResult("uncertain")
-                                }
-                            }
-                        }
-
-                        override fun onReceiveUssdResponseFailed(
-                            telephonyManager: TelephonyManager,
-                            request: String,
-                            failureCode: Int
-                        ) {
-                            Log.e(
-                                TAG,
-                                "Sambaza Android USSD API failed: $failureCode"
-                            )
-
-                            launchAccessibilityFallback(ussdCode)
-                            reportResult("uncertain")
-                        }
-                    },
-                    Handler(Looper.getMainLooper())
-                )
-
-                Log.i(
-                    TAG,
-                    "Sambaza request started using Android USSD API on SIM 1"
-                )
-
-            } catch (e: Exception) {
-                Log.e(TAG, "Could not start Sambaza transfer", e)
-            } finally {
-                connection?.disconnect()
-                jobPollingInProgress = false
-            }
-        }.start()
                             }
 private fun launchUssdCall(ussdCode: String): Boolean {
     val code = ussdCode.trim()
