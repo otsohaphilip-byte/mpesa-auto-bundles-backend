@@ -1058,7 +1058,7 @@ async function installUssdDevices(
 
         res.json({
           status: "SUCCESS",
-          confirmation: saved.rows[0],
+          confirmation: finalConfirmation.rows[0],
           message: "Sambaza SMS recorded. Token credit is not yet applied."
         });
 
