@@ -217,25 +217,65 @@ class LocalDeliveryDatabase(context: Context) :
         return cursor.moveToFirst()
     }
     }
-fun getDeliveryResultStatusForJob(jobId: String): String? {
-    readableDatabase.rawQuery(
-        "SELECT result_status FROM deliveries WHERE local_id = ? LIMIT 1",
-        arrayOf("job-$jobId")
-    ).use { cursor ->
-        if (!cursor.moveToFirst()) return null
-        return cursor.getString(0)
+    fun getDeliveryResultStatusForJob(jobId: String): String? {
+        readableDatabase.rawQuery(
+            "SELECT result_status FROM deliveries WHERE local_id = ? LIMIT 1",
+            arrayOf("job-$jobId")
+        ).use { cursor ->
+            if (!cursor.moveToFirst()) return null
+            return cursor.getString(0)
+        }
     }
-}
-    fun markAsSynced(localId: String) {
+
+    fun getDeliveryResultForJob(jobId: String): ContentValues? {
+        readableDatabase.rawQuery(
+            """
+            SELECT result_status, safaricom_response
+            FROM deliveries
+            WHERE local_id = ?
+            LIMIT 1
+            """.trimIndent(),
+            arrayOf("job-$jobId")
+        ).use { cursor ->
+            if (!cursor.moveToFirst()) return null
+
+            return ContentValues().apply {
+                put("result_status", cursor.getString(0))
+
+                if (cursor.isNull(1)) {
+                    putNull("safaricom_response")
+                } else {
+                    put("safaricom_response", cursor.getString(1))
+                }
+            }
+        }
+    }
+
+    fun markAsSynced(
+        localId: String,
+        expectedStatus: String? = null
+    ) {
         val values = ContentValues().apply {
             put("synced", 1)
+        }
+
+        val whereClause = if (expectedStatus == null) {
+            "local_id = ?"
+        } else {
+            "local_id = ? AND result_status = ?"
+        }
+
+        val whereArgs = if (expectedStatus == null) {
+            arrayOf(localId)
+        } else {
+            arrayOf(localId, expectedStatus)
         }
 
         writableDatabase.update(
             "deliveries",
             values,
-            "local_id = ?",
-            arrayOf(localId)
+            whereClause,
+            whereArgs
         )
     }
         
