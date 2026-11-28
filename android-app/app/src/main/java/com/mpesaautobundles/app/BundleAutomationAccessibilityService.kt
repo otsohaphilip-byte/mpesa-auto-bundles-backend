@@ -242,6 +242,137 @@ class BundleAutomationAccessibilityService : AccessibilityService() {
         } ?: ""
     }
 
+        private fun syncPendingAirtimeTransferSms() {
+        val preferences = getSharedPreferences(
+            ADMIN_GATEWAY_PREFS,
+            MODE_PRIVATE
+        )
+
+        val token = preferences.getString("device_token", "") ?: ""
+
+        if (token.isBlank()) return
+
+        if (!pendingAirtimeSmsSyncInProgress.compareAndSet(false, true)) {
+            return
+        }
+
+        Thread {
+            var connection: HttpURLConnection? = null
+
+            try {
+                val pendingSms = synchronized(preferences) {
+                    val queue = JSONArray(
+                        preferences.getString(
+                            AirtimeTransferSmsReceiver.PENDING_SMS_KEY,
+                            "[]"
+                        ) ?: "[]"
+                    )
+
+                    if (queue.length() > 0) {
+                        queue.optJSONObject(0)?.let {
+                            JSONObject(it.toString())
+                        }
+                    } else {
+                        null
+                    }
+                } ?: return@Thread
+
+                val messageBody = pendingSms.optString("message_body")
+                val receivedAt = pendingSms.optString("received_at")
+
+                if (messageBody.isBlank() || receivedAt.isBlank()) {
+                    Log.e(TAG, "Pending Sambaza SMS has invalid data")
+                    return@Thread
+                }
+
+                connection = openPost(
+                    "$BASE_URL/api/admin/ussd/airtime-transfer-sms",
+                    token
+                )
+
+                val payload = JSONObject().apply {
+                    put("message_body", messageBody)
+                    put("received_at", receivedAt)
+                }
+
+                connection.outputStream.use {
+                    it.write(payload.toString().toByteArray(Charsets.UTF_8))
+                }
+
+                val responseCode = connection.responseCode
+                val responseBody = readConnectionResponse(connection)
+
+                val accepted = responseCode in 200..299 &&
+                    JSONObject(responseBody).optString("status") == "SUCCESS"
+
+                if (!accepted) {
+                    Log.w(
+                        TAG,
+                        "Sambaza SMS upload not confirmed; it remains queued. HTTP $responseCode"
+                    )
+                    return@Thread
+                }
+
+                synchronized(preferences) {
+                    val queue = JSONArray(
+                        preferences.getString(
+                            AirtimeTransferSmsReceiver.PENDING_SMS_KEY,
+                            "[]"
+                        ) ?: "[]"
+                    )
+
+                    val updated = JSONArray()
+                    var removed = false
+
+                    for (index in 0 until queue.length()) {
+                        val item = queue.optJSONObject(index) ?: continue
+
+                        val matches =
+                            !removed &&
+                            item.optString("message_body") == messageBody &&
+                            item.optString("received_at") == receivedAt
+
+                        if (matches) {
+                            removed = true
+                        } else {
+                            updated.put(item)
+                        }
+                    }
+
+                    if (removed) {
+                        val saved = preferences.edit()
+                            .putString(
+                                AirtimeTransferSmsReceiver.PENDING_SMS_KEY,
+                                updated.toString()
+                            )
+                            .commit()
+
+                        if (saved) {
+                            Log.i(
+                                TAG,
+                                "Sambaza confirmation SMS uploaded and removed from queue"
+                            )
+                        } else {
+                            Log.e(
+                                TAG,
+                                "SMS was accepted by server but queue cleanup failed"
+                            )
+                        }
+                    }
+                }
+
+            } catch (e: Exception) {
+                Log.e(
+                    TAG,
+                    "Pending Sambaza SMS upload failed; SMS remains queued",
+                    e
+                )
+            } finally {
+                connection?.disconnect()
+                pendingAirtimeSmsSyncInProgress.set(false)
+            }
+        }.start()
+        }
     private fun isValidUssdCode(code: String): Boolean {
         val value = code.trim()
 
