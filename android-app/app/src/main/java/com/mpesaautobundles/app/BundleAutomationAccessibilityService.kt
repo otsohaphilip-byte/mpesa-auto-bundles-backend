@@ -956,41 +956,7 @@ val payload = JSONObject().apply {
                 }
 
                 if (
-                    checkSelfPermission(
-                        android.Manifest.permission.CALL_PHONE
-                    ) != android.content.pm.PackageManager.PERMISSION_GRANTED ||
-                    checkSelfPermission(
-                        android.Manifest.permission.READ_PHONE_STATE
-                    ) != android.content.pm.PackageManager.PERMISSION_GRANTED
-                ) {
-                    Log.e(TAG, "Phone permissions missing for Sambaza")
-                    return@Thread
-                }
-
-                val subscriptions =
-                    getSystemService(SubscriptionManager::class.java)
-
-                val gatewaySim = subscriptions
-                    .activeSubscriptionInfoList
-                    ?.firstOrNull { it.simSlotIndex == 0 }
-                    ?: return@Thread
-
-                val telephonyManager =
-                    getSystemService(TelephonyManager::class.java)
-                        .createForSubscriptionId(
-                            gatewaySim.subscriptionId
-                        )
-
-                synchronized(this@BundleAutomationAccessibilityService) {
-                    if (ussdSessionInProgress) {
-                        Log.w(TAG, "Another USSD session is already active")
-                        return@Thread
-                    }
-
-                    ussdSessionInProgress = true
-                }
-
-                val transferPreferences = getSharedPreferences(
+                                    val transferPreferences = getSharedPreferences(
                     "active_airtime_transfer",
                     MODE_PRIVATE
                 )
@@ -1005,8 +971,58 @@ val payload = JSONObject().apply {
                     .putBoolean("report_in_progress", false)
                     .apply()
 
-                val timeoutRunnable = Runnable {
-                    if (
+                if (
+                    checkSelfPermission(
+                        android.Manifest.permission.CALL_PHONE
+                    ) != android.content.pm.PackageManager.PERMISSION_GRANTED ||
+                    checkSelfPermission(
+                        android.Manifest.permission.READ_PHONE_STATE
+                    ) != android.content.pm.PackageManager.PERMISSION_GRANTED
+                ) {
+                    reportAirtimeTransferResult(
+                        transferId,
+                        "failed",
+                        "Required phone permissions are missing; Sambaza was not started"
+                    )
+                    return@Thread
+                }
+
+                val subscriptions =
+                    getSystemService(SubscriptionManager::class.java)
+
+                val gatewaySim = subscriptions
+                    .activeSubscriptionInfoList
+                    ?.firstOrNull { it.simSlotIndex == 0 }
+
+                if (gatewaySim == null) {
+                    reportAirtimeTransferResult(
+                        transferId,
+                        "failed",
+                        "Safaricom gateway SIM was not found in SIM 1; Sambaza was not started"
+                    )
+                    return@Thread
+                }
+
+                val telephonyManager =
+                    getSystemService(TelephonyManager::class.java)
+                        .createForSubscriptionId(
+                            gatewaySim.subscriptionId
+                        )
+
+                synchronized(this@BundleAutomationAccessibilityService) {
+                    if (ussdSessionInProgress) {
+                        Log.w(TAG, "Another USSD session is already active")
+
+                        reportAirtimeTransferResult(
+                            transferId,
+                            "failed",
+                            "Another USSD session is active; Sambaza was not started"
+                        )
+                        return@Thread
+                    }
+
+                    ussdSessionInProgress = true
+                }
                         transferPreferences.getLong(
                             "transfer_id",
                             0L
