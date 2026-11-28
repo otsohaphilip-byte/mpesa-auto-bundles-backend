@@ -522,6 +522,7 @@ if (currentActiveDelivery?.getAsString("job_id") == jobIdText) {
     database.clearActiveDelivery()
 }
                     reportAccepted = true
+                                            ussdSessionInProgress = false
 
                     Log.i(TAG, "Delivery result accepted by backend for job $jobId")
                 } else {
